@@ -6,107 +6,306 @@
     <title>Free Posture Analysis & Personalized Biomechanics Protocol</title>
 
     
-<!-- React & Dependencies -->
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- React & Dependencies (2025 Immortal CDN) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
 
 <!-- TensorFlow (Lazy Loaded) -->
 
 
 <style>
     body { background-color: #020617; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; font-size: 16px; }
+    .workspace { 
+    display: grid; 
+    grid-template-columns: 1fr 350px; 
+    height: 100vh; 
+    transition: grid-template-columns 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.workspace.post-analysis {
+    grid-template-columns: 480px 1fr;
+}
+    .viewport { 
+    position: relative; 
+    display: flex; 
+    flex-direction: column; 
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(12px);
+    border-right: 1px solid rgba(148, 163, 184, 0.1); 
+    overflow-y: auto; 
+    padding: 3rem; 
+    transition: all 0.8s ease;
+}
+.glass-panel { 
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 0.9));  
+    backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(148, 163, 184, 0.2);
+    height: 100vh; 
+    z-index: 40; 
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    box-shadow: -20px 0 40px rgba(0,0,0,0.5);
+    transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.glass-panel.expanded {
+    background: linear-gradient(to left, rgba(15,23,42,0.95), rgba(2,6,23,1));
+}
     
-    /* DESKTOP LAYOUT */
-    .workspace { display: grid; grid-template-columns: 1fr 450px; height: 100vh; overflow: hidden; }
-    .viewport { position: relative; display: flex; flex-direction: column; background: #0f172a; overflow-y: auto; overflow-x: hidden; padding: 2rem; }
-    .glass-panel { background: #020617; border-left: 1px solid #1e293b; height: 100vh; display: flex; flex-direction: column; z-index: 40; }
-
-    /* MOBILE LAYOUT (The Outsized Return) */
-    @media (max-width: 1024px) {
-        .workspace { display: flex; flex-direction: column; height: 100vh; overflow-y: auto; overflow-x: hidden; }
-        .viewport { min-height: auto; padding: 1rem; overflow: visible; flex-shrink: 0; }
-        .glass-panel { height: auto; border-left: none; border-top: 1px solid #1e293b; flex-shrink: 0; overflow: visible; }
-        .upload-grid { grid-template-columns: repeat(1, 1fr) !important; gap: 1.5rem; height: auto !important; }
-        .upload-slot { height: 400px !important; }
-        .body-part { pointer-events: none; } /* Disable hover effects on mobile to prevent sticky tooltips */
+    .upload-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    height: 100%;
+    padding: 1rem 0;
+}
+@media (max-width: 1400px) {
+    .upload-grid {
+        gap: 1.5rem;
     }
-
-    /* UTILITIES */
-    .upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; height: 100%; min-height: 400px; }
-    .upload-slot { border: 2px dashed #334155; border-radius: 12px; position: relative; transition: all 0.3s; background: #1e293b/30; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; height: 100%; min-height: 300px; overflow: hidden; }
+}
+@media (max-width: 1280px) {
+    .upload-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+@media (max-width: 768px) {
+    .upload-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+    .upload-slot { 
+    border: 3px dashed rgba(103, 116, 139, 0.6); 
+    border-radius: 32px; 
+    background: rgba(30, 41, 59, 0.5); 
+    backdrop-filter: blur(16px);
+    min-height: 540px;
+    transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+    overflow: hidden;
+}
     .upload-slot:hover { border-color: #22d3ee; background: #1e293b/50; }
     .upload-slot.active { border-style: solid; border-color: #22d3ee; }
     .upload-slot img { width: 100%; height: 100%; object-fit: contain; opacity: 0.6; }
+    
+    .btn-primary { 
+        background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%); 
+        box-shadow: 0 10px 30px rgba(6, 182, 212, 0.4);
+        font-size: 1.2rem;
+        padding: 1.5rem 3rem;
+        border-radius: 1.5rem;
+    }
+    .btn-primary:hover { 
+        transform: translateY(-4px) scale(1.02); 
+        box-shadow: 0 20px 40px rgba(6, 182, 212, 0.5); 
+    }
+    .btn-primary:active { 
+        transform: translateY(1px); box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2); filter: brightness(0.95); }
+    .btn-primary:disabled { opacity: 0.7; cursor: wait; transform: none; }
 
-    /* UI ELEMENTS */
-    .btn-primary { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: white; font-weight: 800; padding: 16px 24px; border-radius: 12px; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px; font-size: 14px; display: flex; align-items: center; gap: 8px; justify-content: center; box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2); cursor: pointer; width: 100%; }
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(6, 182, 212, 0.4); filter: brightness(1.1); }
-    .btn-primary:active { transform: translateY(1px); filter: brightness(0.95); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-weight: bold; padding: 16px 24px; border-radius: 8px; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px; font-size: 12px; cursor: pointer; }
+    .btn-secondary:hover { border-color: #64748b; color: white; }
 
-    .btn-secondary { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-weight: bold; padding: 12px 20px; border-radius: 8px; transition: all 0.2s; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
-    .btn-secondary:hover { border-color: #64748b; color: white; background: #334155; }
+    .protocol-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: #0f172a; border: 1px solid #334155; color: #94a3b8; cursor: pointer; transition: all 0.2s; }
+    .protocol-badge:hover { border-color: #22d3ee; color: #22d3ee; }
 
-    .protocol-badge { font-size: 10px; padding: 6px 10px; border-radius: 6px; font-weight: 700; text-transform: uppercase; background: #0f172a; border: 1px solid #334155; color: #94a3b8; cursor: pointer; transition: all 0.2s; text-align: center; }
-    .protocol-badge:hover { border-color: #22d3ee; color: #22d3ee; background: #1e293b; }
-
-    .symptom-chip { padding: 8px 16px; border-radius: 100px; border: 1px solid #334155; background: #1e293b; color: #94a3b8; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; user-select: none; }
-    .symptom-chip:hover { border-color: #94a3b8; color: white; }
-    .symptom-chip.selected { background: #f43f5e; border-color: #e11d48; color: white; box-shadow: 0 4px 12px rgba(244, 63, 94, 0.3); }
-
-    .tab-btn { padding: 12px 20px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: #64748b; cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent; display: flex; items-center; gap: 6px; }
-    .tab-btn:hover { color: #94a3b8; }
+    .fascia-tag { font-size: 10px; font-weight: bold; padding: 4px 8px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #94a3b8; display: flex; justify-content: space-between; }
+    .symptom-tag { background: #450a0a; border-color: #ef4444; color: #fca5a5; }
+    
+    .symptom-chip {
+        padding: 6px 12px; border-radius: 20px; border: 1px solid #334155; background: #1e293b; color: #94a3b8; 
+        font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+    }
+    .symptom-chip:hover { border-color: #64748b; }
+    .symptom-chip.selected { background: #f43f5e; border-color: #e11d48; color: white; box-shadow: 0 2px 8px rgba(244, 63, 94, 0.4); }
+    
+    .tab-btn { padding: 8px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent; }
     .tab-btn.active { color: #22d3ee; border-bottom-color: #22d3ee; }
 
-    .chat-bubble { padding: 12px 16px; border-radius: 16px; font-size: 13px; line-height: 1.5; max-width: 85%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .chat-user { background: #0891b2; color: white; align-self: flex-end; border-bottom-right-radius: 4px; margin-left: auto; }
-    .chat-ai { background: #1e293b; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #334155; }
+    .task-card { background: #1e293b/40; border: 1px solid #334155; border-radius: 8px; padding: 12px; transition: all 0.2s; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+    .task-card:hover { border-color: #22d3ee; background: #1e293b/60; }
+    .task-card.completed { border-color: #10b981; background: #064e3b/20; }
+    .task-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+    .task-card.completed .task-check { background: #10b981; border-color: #10b981; }
 
-    /* ANIMATIONS */
-    .scanner-line { position: absolute; left: 0; right: 0; height: 2px; background: #22d3ee; box-shadow: 0 0 20px #22d3ee; animation: scanDown 2s infinite ease-in-out; z-index: 20; display: none; pointer-events: none; }
-    .analyzing .scanner-line { display: block; }
-    @keyframes scanDown { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+    /* Chat Styles */
+    .chat-bubble { padding: 10px 14px; border-radius: 12px; font-size: 12px; line-height: 1.5; max-width: 90%; margin-bottom: 8px; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    .chat-user { background: #0891b2; color: white; align-self: flex-end; border-bottom-right-radius: 2px; margin-left: auto; }
+    .chat-ai { background: #1e293b; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #334155; }
+    @keyframes popIn { from { opacity: 0; transform: scale(0.9) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
     
-    .animate-popIn { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-    @keyframes popIn { from { opacity: 0; transform: scale(0.95) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-    
-    .confetti { position: absolute; width: 6px; height: 6px; z-index: 100; pointer-events: none; }
-    @keyframes confetti-fall { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+    .animate-popIn { animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
-    /* PRINT STYLES */
+    /* Enhanced Premium Scanner */
+.scanner-line { 
+    position: absolute; 
+    left: 0; right: 0; 
+    height: 12px; 
+    background: linear-gradient(90deg, transparent, #22d3ee, #fff, #22d3ee, transparent);
+    box-shadow: 
+        0 0 40px #22d3ee,
+        0 0 100px rgba(34, 211, 238, 0.8);
+    animation: scanDown 4s ease-in-out infinite;
+    z-index: 25; 
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+}
+
+@keyframes scanDown { 
+    0% { top: 0%; opacity: 0; transform: scaleX(0.5); }
+    10% { opacity: 1; transform: scaleX(1); }
+    90% { opacity: 1; transform: scaleX(1); }
+    100% { top: 100%; opacity: 0; transform: scaleX(0.5); }
+}
+
+    /* Avatar Breathing Animation */
+    .body-part { 
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+    cursor: pointer; 
+}
+.body-part:hover { 
+    filter: brightness(1.8) drop-shadow(0 0 30px #22d3ee); 
+    transform: scale(1.12); 
+}
+.body-part:active {
+    transform: scale(1.05);
+    filter: brightness(2) drop-shadow(0 0 40px #22d3ee);
+}
+    
+    /* Confetti CSS */
+    .confetti { position: absolute; width: 8px; height: 8px; background: #22d3ee; animation: confetti-fall 3s linear infinite; opacity: 0; }
+    @keyframes confetti-fall {
+        0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+        100% { transform: translateY(500px) rotate(720deg); opacity: 0; }
+    }
+
+    /* NEW: Progress Streak Styles */
+    .streak-flame { animation: flicker 2s infinite alternate; }
+    @keyframes flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+    /* NEW: Goal Tracker Styles */
+    .goal-progress { background: linear-gradient(to right, #10b981, #059669); height: 4px; border-radius: 2px; transition: width 0.3s ease; }
+
     @media print {
         body { background: white; color: black; overflow: visible; }
-        .workspace { display: block; height: auto; }
-        .viewport, .glass-panel { width: 100%; height: auto; border: none; overflow: visible; display: block; }
+        .workspace { display: flex; height: auto; }
+        .viewport, .glass-panel { width: 100%; height: auto; border: none; overflow: visible; }
+        .upload-grid { display: grid; grid-template-columns: repeat(3, 1fr); height: 200px; margin-bottom: 2rem; }
+        .upload-slot { border: 1px solid #ccc; background: white; }
+        .upload-slot img { opacity: 1; }
         .no-print { display: none !important; }
-        .upload-slot { border: 1px solid #ccc; background: white; break-inside: avoid; }
-    }
+        .text-white { color: black !important; }
+        .text-slate-500 { color: #666 !important; }
+        .bg-slate-900\/50 { background: none !important; border: 1px solid #eee; }
+        .protocol-badge { border: 1px solid #000; color: #000; }
+/* Add this inside your <style> tag */
+.animate-popIn { 
+    animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; 
+}
+@keyframes popIn { 
+    from { opacity: 0; transform: scale(0.95) translateY(20px); } 
+    to { opacity: 1; transform: scale(1) translateY(0); } 
+}
+    } @media (max-width: 1400px) {
+    .workspace { grid-template-columns: 1fr 400px; }
+}
+@media (max-width: 1200px) {
+    .upload-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+    .workspace { grid-template-columns: 1fr; }
+    .glass-panel { display: none; } /* optional: hide panel on mobile */
+    .upload-grid { grid-template-columns: 1fr; }
+}
+@keyframes pulse-slow {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.03); opacity: 0.95; }
+}
+.animate-pulse-slow { 
+    animation: pulse-slow 8s infinite ease-in-out; 
+}
+.living-avatar { 
+    filter: drop-shadow(0 0 30px rgba(34,211,238,0.3)); 
+}
+.bg-size-200 { background-size: 200% 200%; }
+.bg-pos-0 { background-position: 0% 50%; }
+.bg-pos-100 { background-position: 100% 50%; }
+.hover\\:bg-pos-100:hover { background-position: 100% 50%; }
+.body-part, .upload-slot, .btn-primary, .glass-panel, .workspace {
+    will-change: transform, opacity, filter;
+    transform: translateZ(0); /* or translate3d(0,0,0) - forces GPU layer */
+    backface-visibility: hidden; /* optional, reduces repaint */
+}
+
+.chat-bubble, .animate-popIn, .task-card {
+    will-change: transform, opacity;
+}
+/* Optimized GPU Acceleration */
+.viewport, .glass-panel, .upload-slot, .body-part, canvas {
+    backface-visibility: hidden;
+    transform: translate3d(0,0,0);
+}
+
+/* Limit will-change to only what moves frequently */
+.workspace {
+    will-change: grid-template-columns;
+}
+
+.scanner-line {
+    will-change: top;
+}
+
+/* Smooth Scrolling */
+.viewport, .glass-panel {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+/* Disable expensive blur ONLY during heavy analysis to save FPS */
+.analyzing-blur-fix {
+    backdrop-filter: none !important;
+    background: rgba(15, 23, 42, 0.95) !important;
+}
 </style></head>
 <body>
     <div id="root"></div>
 
 <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
 const SFX = {
-        play: (freq = 440, type = 'sine', duration = 0.1) => {
+    play: (freq, type, dur) => {
+        try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
+            const g = ctx.createGain();
             osc.type = type;
-            osc.frequency.value = freq;
-            osc.connect(gain);
-            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            g.gain.setValueAtTime(0.1, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+            osc.connect(g);
+            g.connect(ctx.destination);
             osc.start();
-            gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + duration);
-            osc.stop(ctx.currentTime + duration);
-        },
-        success: () => { SFX.play(880, 'triangle', 0.1); setTimeout(() => SFX.play(1760, 'sine', 0.3), 100); },
-        error: () => { SFX.play(150, 'sawtooth', 0.3); },
-        scan: () => { SFX.play(2000, 'sine', 0.05); }
-    };
-
-    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+            osc.stop(ctx.currentTime + dur);
+        } catch(e) { console.log("Audio blocked"); }
+    },
+    scan: () => SFX.play(150, 'sawtooth', 0.8),
+    success: () => {
+        SFX.play(440, 'sine', 0.2);
+        setTimeout(() => SFX.play(880, 'sine', 0.4), 100);
+    }
+};
 
     // --- ICONS ---
     const Icons = {
@@ -314,7 +513,7 @@ const SFX = {
                 case 'B': return "fill-blue-500/20 stroke-blue-500 hover:fill-blue-500/40";
                 case 'C': return "fill-yellow-500/20 stroke-yellow-500 hover:fill-yellow-500/40";
                 case 'D': return "fill-orange-500/20 stroke-orange-500 hover:fill-orange-500/40";
-                case 'F': return "fill-red-500/20 stroke-red-500 hover:fill-red-500/40 animate-pulse";
+                case 'F': return "fill-red-600/40 stroke-red-600 hover:fill-red-600/60 animate-pulse shadow-2xl shadow-red-900/70";
                 default: return "fill-slate-700 stroke-slate-600";
             }
         };
@@ -322,23 +521,30 @@ const SFX = {
         // PRIORITY LOGIC: Pain trumps Grade. 
         // If a symptom is active for a region, it glows red/alert regardless of the scan score.
         const getFill = (part, gradeObj) => {
-            if (part === 'head' && symptoms.includes('Neck Pain')) return "fill-red-500/30 stroke-red-500 animate-pulse";
-            if (part === 'spine' && symptoms.includes('Back Pain')) return "fill-red-500/30 stroke-red-500 animate-pulse";
-            if (part === 'hip' && (symptoms.includes('Back Pain') || symptoms.includes('Knee Pain'))) return "fill-orange-500/30 stroke-orange-500 animate-pulse"; // Hips link to both
-            if (part === 'gait' && (symptoms.includes('Knee Pain') || symptoms.includes('Foot Pain'))) return "fill-red-500/30 stroke-red-500 animate-pulse";
-            
-            // Fallback to Scan Grade
-            return audit ? getColor(gradeObj.grade) : "fill-slate-800 stroke-slate-700";
-        };
+    const grade = gradeObj?.grade || 'F';
+    const isBad = grade === 'F' || grade === 'D';
+    const isPain = 
+        (part === 'head' && symptoms.includes('Neck Pain')) ||
+        (part === 'spine' && symptoms.includes('Back Pain')) ||
+        (part === 'hip' && (symptoms.includes('Back Pain') || symptoms.includes('Knee Pain'))) ||
+        (part === 'gait' && (symptoms.includes('Knee Pain') || symptoms.includes('Foot Pain')));
 
-        const headC = getFill('head', audit ? audit.head : {});
-        const shC = audit ? getColor(audit.shoulders.grade) : "fill-slate-800 stroke-slate-700"; // Shoulders usually secondary
-        const spineC = getFill('spine', audit ? audit.spine : {});
-        const hipC = getFill('hip', audit ? audit.hip : {});
-        const legC = getFill('gait', audit ? audit.gait : {});
+    if (isPain || isBad) {
+        return "fill-red-600/50 stroke-red-500 animate-pulse shadow-2xl shadow-red-900/70 hover:fill-red-600/80 hover:scale-110 cursor-pointer transition-all duration-300";
+    }
+
+    const baseColor = getColor(grade);
+    return `${baseColor} hover:brightness-150 hover:scale-108 cursor-pointer transition-all duration-300`;
+};
+
+const headC   = getFill('head',       audit ? audit.head       : { grade: 'F' });
+const shC     = getFill('shoulders', audit ? audit.shoulders : { grade: 'F' });
+const spineC  = getFill('spine',      audit ? audit.spine      : { grade: 'F' });
+const hipC    = getFill('hip',        audit ? audit.hip        : { grade: 'F' });
+const legC    = getFill('gait',       audit ? audit.gait       : { grade: 'F' });
 
         return (
-            <svg viewBox="0 0 200 400" className="w-full h-[360px] drop-shadow-2xl living-avatar">
+            <svg viewBox="20 40 160 360" className="w-full h-auto mx-auto drop-shadow-2xl animate-pulse-slow living-avatar">
                 <g onClick={()=>onPartClick && onPartClick('gait')} className={`body-part ${legC}`}>
                     <path strokeWidth="2" d="M70,220 Q60,300 65,380 L85,380 Q90,300 95,220 Z" /> {/* L Leg */}
                     <path strokeWidth="2" d="M130,220 Q140,300 135,380 L115,380 Q110,300 105,220 Z" /> {/* R Leg */}
@@ -439,18 +645,20 @@ const SFX = {
         
         useEffect(() => {
             if (animationRef.current) cancelAnimationFrame(animationRef.current);
+	const ctx = ref.current.getContext('2d', { alpha: false });
+if (!ctx) return;
+
+// We define these ONCE here so the loop below can use them
+const rect = ref.current.getBoundingClientRect();
+const dpr = window.devicePixelRatio || 1;
+ref.current.width = rect.width * dpr;
+ref.current.height = rect.height * dpr;
+ctx.scale(dpr, dpr);
+
+const w = rect.width, h = rect.height, cx = w/2, cy = h/2, s = h/350;	
             let startTime = Date.now();
             const loop = () => {
                 if (!ref.current) return; 
-                const ctx = ref.current.getContext('2d');
-                if (!ctx) return;
-                const rect = ref.current.getBoundingClientRect();
-                const dpr = window.devicePixelRatio || 1;
-                if (ref.current.width !== Math.floor(rect.width * dpr)) {
-                    ref.current.width = rect.width * dpr; ref.current.height = rect.height * dpr; ref.current.height = rect.height * dpr;
-                    ctx.scale(dpr, dpr);
-                }
-                const w = rect.width, h = rect.height, cx = w/2, cy = h/2, s = h/350; 
                 
                 try {
                     ctx.clearRect(0,0,w,h);
@@ -1104,13 +1312,15 @@ const SFX = {
                             ctx.restore();
                         }
                     }
-                    else if (type === 'head_loading_basic' || type === 'head_loading') {  // Basic standing
-    const headX = cx; const headY = cy - 40 * s;
+                    else if (type === 'head_loading_basic' || type === 'head_loading') { 
+    const headX = cx; 
+    // REDUCED NECK: Changed cy - 40 to cy - 25 to pull head closer to body
+    const headY = cy - 25 * s; 
     drawEquipment('ball', headX, headY - 28 * s, 0);
-    const shoulderY = headY + 20 * s;
+    const shoulderY = headY + 15 * s; // Adjusted shoulders up
     drawSegment(headX + 20 * s, shoulderY, headX + 10 * s, headY - 40 * s, 8 * s, '#38bdf8'); 
     drawSegment(headX - 20 * s, shoulderY, headX - 10 * s, headY - 40 * s, 8 * s, '#38bdf8'); 
-    drawMuscle(headX, headY + 10 * s, headX, headY + 60 * s, 10 * s, true, "AXIAL LOAD");
+    drawMuscle(headX, headY + 5 * s, headX, headY + 45 * s, 10 * s, true, "AXIAL LOAD");
     ctx.beginPath(); ctx.arc(headX, headY, 20 * s, 0, 2 * Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill();
     ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText("BASIC HEAD LOADING", 20, 30);
     drawForce(headX, headY - 20 * s, 0, 1, "GRAVITY");
@@ -1147,10 +1357,12 @@ else if (type === 'head_hinge') {  // Improved Hip Hinge - more realistic poster
     ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText("HEAD-LOADED HIP HINGE", 20, 30);
     drawForce(hipX, cy + 60 * s, 1, 0, "PUSH BUTT BACK");  // Better cue
 }
-else if (type === 'head_split') {  // Split Squat
+else if (type === 'head_split') { 
     const phase = easeInOutCubic((Math.sin(t * 2) + 1) / 2);
     const depth = phase * 30 * s;
-    const headX = cx; const headY = cy - 80 * s + depth;
+    const headX = cx; 
+    // REDUCED NECK: Changed -80 to -55 to keep head on the shoulders
+    const headY = cy - 55 * s + depth; 
     drawEquipment('ball', headX, headY - 28 * s, 0);
     const frontKneeX = cx + 40 * s; const frontFootX = cx + 60 * s;
     drawSegment(cx, cy + depth, frontKneeX, cy + 40 * s + depth, 16 * s, '#22d3ee');
@@ -2068,305 +2280,78 @@ const TrendGraph = ({ history }) => {
         );
     };
 
-    // REPLACE THE ENTIRE ShareReport COMPONENT WITH THIS:
-
-const ShareReport = ({ audit, onClose }) => {
-    const canvasRef = useRef(null);
-
-    // 1. The Archetype Logic (The "Viral" Hook)
-    const getArchetype = (score) => {
-        if (score >= 90) return { title: "APEX PREDATOR", color: "#10b981", sub: "ELITE BIO-MECHANICS" };
-        if (score >= 80) return { title: "KINETIC SAVANT", color: "#38bdf8", sub: "HIGH EFFICIENCY FLOW" };
-        if (score >= 70) return { title: "HYBRID ATHLETE", color: "#fbbf24", sub: "BUILDING STRUCTURAL INTEGRITY" };
-        if (score >= 60) return { title: "IRON REBUILD", color: "#f97316", sub: "ACTIVE RECOVERY MODE" };
-        return { title: "SYSTEM RESET", color: "#ef4444", sub: "CRITICAL FOUNDATION PHASE" };
-    };
-
-    useEffect(() => {
-        if (!audit || !canvasRef.current) return;
-        const ctx = canvasRef.current.getContext('2d');
-        
-        // Instagram Story Ratio (High Res)
-        const w = 1080;
-        const h = 1920; 
-        canvasRef.current.width = w;
-        canvasRef.current.height = h;
-
-        const arch = getArchetype(audit.score);
-
-        // --- LAYER 1: BACKGROUND ---
-        // Dark Void Background
-        const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, '#020617');
-        grad.addColorStop(1, '#0f172a');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, w, h);
-
-        // Grid Pattern (The "Tech" Feel)
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 2;
-        for (let i = 0; i < w; i += 60) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke(); }
-        for (let i = 0; i < h; i += 60) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
-
-        // --- LAYER 2: THE "CARD" CONTAINER ---
-        // A floating glass card look
-        const cardX = 80, cardY = 200, cardW = w - 160, cardH = h - 400;
-        ctx.fillStyle = '#0f172a';
-        ctx.strokeStyle = arch.color;
-        ctx.lineWidth = 10;
-        ctx.beginPath();
-        ctx.roundRect(cardX, cardY, cardW, cardH, 40);
-        ctx.fill();
-        ctx.stroke();
-
-        // --- LAYER 3: THE SCORE (HERO) ---
-        const centerX = w / 2;
-        const scoreY = cardY + 300;
-
-        // Glow effect
-        ctx.shadowBlur = 50;
-        ctx.shadowColor = arch.color;
-
-        // Big Ring
-        ctx.beginPath();
-        ctx.arc(centerX, scoreY, 200, 0, 2 * Math.PI);
-        ctx.strokeStyle = '#1e293b'; // Background ring
-        ctx.lineWidth = 30;
-        ctx.stroke();
-
-        ctx.beginPath();
-        // Draw arc based on score
-        const endAngle = (audit.score / 100) * 2 * Math.PI - (Math.PI / 2); // Start at top
-        ctx.arc(centerX, scoreY, 200, -Math.PI / 2, endAngle);
-        ctx.strokeStyle = arch.color;
-        ctx.lineWidth = 30;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        // The Number
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 180px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(audit.score, centerX, scoreY + 10);
-
-        // Label
-        ctx.font = 'bold 30px Inter, sans-serif';
-        ctx.fillStyle = '#64748b';
-        ctx.fillText("BIO-INTEGRITY", centerX, scoreY + 140);
-
-        // --- LAYER 4: THE ARCHETYPE (IDENTITY) ---
-        ctx.shadowBlur = 0; // Reset glow for text
-        ctx.fillStyle = arch.color;
-        ctx.font = '900 80px Inter, sans-serif'; // Heavy font
-        ctx.fillText(arch.title, centerX, cardY + 650);
-        
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '500 36px Inter, sans-serif';
-        ctx.fillText(arch.sub, centerX, cardY + 710);
-
-        // --- LAYER 5: STAT BARS (READABILITY FIX) ---
-        const stats = [
-            { label: "POSTURE CHAIN", val: audit.head.val },
-            { label: "SPINAL LOAD", val: audit.spine.val },
-            { label: "HIP POWER", val: audit.hip.val },
-            { label: "GAIT RECOIL", val: audit.gait.val }
-        ];
-
-        let barY = cardY + 850;
-        ctx.textAlign = 'left';
-        
-        stats.forEach(stat => {
-            // Label
-            ctx.fillStyle = '#cbd5e1';
-            ctx.font = 'bold 30px monospace';
-            ctx.fillText(stat.label, cardX + 80, barY);
-
-            // Value Text
-            ctx.textAlign = 'right';
-            ctx.fillStyle = stat.val > 70 ? '#fff' : '#94a3b8';
-            ctx.fillText(`${stat.val}%`, cardX + cardW - 80, barY);
-            ctx.textAlign = 'left';
-
-            // Bar Background
-            barY += 20;
-            ctx.fillStyle = '#1e293b';
-            ctx.beginPath();
-            ctx.roundRect(cardX + 80, barY, cardW - 160, 20, 10);
-            ctx.fill();
-
-            // Bar Fill
-            ctx.fillStyle = stat.val > 80 ? arch.color : stat.val > 60 ? '#cbd5e1' : '#ef4444';
-            ctx.beginPath();
-            ctx.roundRect(cardX + 80, barY, (cardW - 160) * (stat.val / 100), 20, 10);
-            ctx.fill();
-
-            barY += 90; // Spacing
-        });
-
-        // --- LAYER 6: FOOTER ---
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 40px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.globalAlpha = 0.5;
-        ctx.fillText("GENERATED BY BIOMETRIC PRO", centerX, h - 100);
-        ctx.globalAlpha = 1.0;
-
-    }, [audit]);
-
-    const download = () => {
-        const link = document.createElement('a');
-        link.download = `biometric-card-${audit.date}.png`;
-        link.href = canvasRef.current.toDataURL();
-        link.click();
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center p-4 animate-popIn backdrop-blur-xl">
-            <div className="text-white font-bold mb-4 text-center">
-                <div className="text-xs text-cyan-400 mb-1 tracking-widest uppercase">Your Viral Card is Ready</div>
-                <div className="text-2xl">TAP TO SAVE</div>
-            </div>
-            
-            {/* The Canvas is hidden visually on mobile via CSS usually, but we show it here scaled down */}
-            <canvas 
-                ref={canvasRef} 
-                className="w-auto h-[65vh] rounded-2xl shadow-2xl mb-8 border border-slate-700 hover:scale-105 transition-transform duration-500" 
-            />
-            
-            <div className="flex gap-4 w-full max-w-sm">
-                <button onClick={onClose} className="flex-1 px-6 py-4 rounded-xl bg-slate-800 text-slate-300 font-bold border border-slate-700 hover:bg-slate-700 transition-all">CLOSE</button>
-                <button onClick={download} className="flex-1 px-6 py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-black shadow-lg shadow-cyan-900/50 hover:shadow-cyan-500/50 hover:scale-105 transition-all flex items-center justify-center gap-2">
-                    <Icons.Share /> SAVE
-                </button>
-            </div>
-        </div>
-    );
-};
-    // --- CAMERA COMPONENT (V2 ROBUST) ---
-    const CameraCapture = ({ onCapture, onClose }) => {
-        const videoRef = useRef(null);
-        const [error, setError] = useState(null);
-
-        useEffect(() => {
-            let stream = null;
-            
-            const startCamera = async () => {
-                // 1. Security Check
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    setError("Camera API not available. You might be opening this as a local file (file://). Browsers require HTTPS or Localhost for camera access.");
-                    return;
-                }
-
-                try {
-                    // 2. Aggressive Mobile Config
-                    stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { 
-                            facingMode: 'environment', // Rear camera preference
-                            width: { ideal: 1920 },    // High Res
-                            height: { ideal: 1080 } 
-                        }, 
-                        audio: false 
-                    });
-                    
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream;
-                        // 3. Force Play (Vital for iOS)
-                        videoRef.current.onloadedmetadata = () => {
-                            videoRef.current.play().catch(e => console.error("Play error:", e));
-                        };
-                    }
-                } catch (err) {
-                    console.error("Camera Error:", err);
-                    setError(`Access Denied: ${err.message}. Check permissions.`);
-                }
-            };
-
-            startCamera();
-
-            return () => {
-                // Cleanup: Kill the light/stream immediately when closing
-                if (stream) stream.getTracks().forEach(t => t.stop());
-            };
-        }, []);
-
-        const takePhoto = () => {
-            if (!videoRef.current) return;
-            const canvas = document.createElement('canvas');
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
-            const ctx = canvas.getContext('2d');
-            
-            // Draw what we see
-            ctx.drawImage(videoRef.current, 0, 0);
-            
-            // High quality JPEG
-            const url = canvas.toDataURL('image/jpeg', 0.95);
-            SFX.play(800, 'square', 0.05); // Shutter sound
-            onCapture(url);
+    // --- NEW: Share Report Component ---
+    const ShareReport = ({ audit, onClose }) => {
+        const shareData = audit ? `Bio-Metric Pro Score: ${audit.score}% | Date: ${audit.date} | Share your progress!` : '';
+        const handleShare = async () => {
+            if (navigator.share) {
+                await navigator.share({ title: 'Bio-Metric Progress', text: shareData });
+            } else {
+                navigator.clipboard.writeText(shareData);
+                alert('Copied to clipboard!');
+            }
+            onClose();
         };
-
         return (
-            <div className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center">
-                {error ? (
-                    <div className="p-6 bg-slate-900 border border-red-500 rounded-xl text-center max-w-sm mx-4">
-                        <div className="text-red-500 text-3xl mb-4">📷❌</div>
-                        <h3 className="text-white font-bold mb-2">Camera Unavailable</h3>
-                        <p className="text-slate-400 text-sm mb-6">{error}</p>
-                        <div className="flex gap-2">
-                            <button onClick={onClose} className="btn-secondary w-full">Close</button>
-                            <label className="btn-primary w-full text-center cursor-pointer">
-                                Upload File
-                                <input type="file" className="hidden" accept="image/*" onChange={(e) => {
-                                    if(e.target.files[0]) {
-                                        const url = URL.createObjectURL(e.target.files[0]);
-                                        onCapture(url);
-                                    }
-                                }} />
-                            </label>
-                        </div>
-                    </div>
-                ) : (
-                    <>
-                        <video 
-                            ref={videoRef} 
-                            className="w-full h-full object-cover" 
-                            playsInline 
-                            muted 
-                            autoPlay 
-                        />
-                        
-                        {/* Alignment Overlay */}
-                        <div className="absolute inset-0 border-[30px] md:border-[50px] border-black/60 pointer-events-none"></div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-[85%] h-[75%] border-2 border-cyan-400/50 rounded-lg relative shadow-[0_0_50px_rgba(34,211,238,0.2)]">
-                                {/* Corners */}
-                                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-cyan-400 -mt-1 -ml-1"></div>
-                                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-cyan-400 -mt-1 -mr-1"></div>
-                                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-cyan-400 -mb-1 -ml-1"></div>
-                                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-cyan-400 -mb-1 -mr-1"></div>
-                                <div className="absolute top-4 left-0 right-0 text-center text-cyan-400 text-xs font-black uppercase tracking-widest bg-black/60 py-2 backdrop-blur-sm">Align Body Here</div>
-                            </div>
-                        </div>
-
-                        {/* Controls */}
-                        <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center gap-12 pointer-events-auto">
-                            <button onClick={onClose} className="p-4 rounded-full bg-slate-900/80 text-white border border-slate-600 hover:bg-red-900/50 transition-colors">
-                                <Icons.Close />
-                            </button>
-                            <button onClick={takePhoto} className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center bg-white/10 active:bg-white/30 active:scale-95 transition-all shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-                                <div className="w-16 h-16 bg-white rounded-full"></div>
-                            </button>
-                            {/* Dummy spacer for centering */}
-                            <div className="w-12"></div>
-                        </div>
-                    </>
-                )}
+            <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                <div className="bg-slate-900 w-full max-w-md rounded-xl border border-slate-700 p-6 text-center">
+                    <h3 className="text-lg font-bold text-white mb-4">Share Your Report</h3>
+                    <p className="text-sm text-slate-400 mb-4">{shareData}</p>
+                    <button onClick={handleShare} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 rounded text-white font-bold mb-2 flex items-center justify-center gap-2"><Icons.Share /> Share Now</button>
+                    <button onClick={onClose} className="w-full py-2 text-slate-400 hover:text-white text-sm">Cancel</button>
+                </div>
             </div>
         );
     };
+// --- CAMERA COMPONENT ---
+    const CameraCapture = ({ onCapture, onClose }) => {
+        const videoRef = useRef(null);
+        const [timer, setTimer] = useState(null);
+        
+        useEffect(() => {
+            let stream = null;
+            navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+                stream = s;
+                if(videoRef.current) videoRef.current.srcObject = stream;
+            }).catch(err => { console.error(err); onClose(); });
+            return () => { if(stream) stream.getTracks().forEach(t => t.stop()); };
+        }, []);
+
+        const trigger = () => setTimer(3);
+
+        useEffect(() => {
+            if(timer === null) return;
+            if(timer > 0) setTimeout(() => setTimer(timer - 1), 1000);
+            else {
+                const cvs = document.createElement('canvas');
+                cvs.width = videoRef.current.videoWidth;
+                cvs.height = videoRef.current.videoHeight;
+                // Flip horizontally to match mirror view
+                const ctx = cvs.getContext('2d');
+                ctx.translate(cvs.width, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(videoRef.current, 0, 0);
+                onCapture(cvs.toDataURL('image/jpeg'));
+            }
+        }, [timer]);
+
+        return (
+            <div className="fixed inset-0 bg-black/95 z-[60] flex flex-col items-center justify-center p-4 animate-popIn">
+                <div className="relative w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+                    <video ref={videoRef} autoPlay playsInline className="w-full bg-black transform scale-x-[-1]" />
+                    {timer > 0 && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-9xl font-black text-white animate-ping backdrop-blur-sm">{timer}</div>}
+                    <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4">
+                        <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-slate-300 rounded-full font-bold border border-slate-600 hover:bg-slate-700 transition-all">CANCEL</button>
+                        <button onClick={trigger} className="px-6 py-2 bg-cyan-600 text-white rounded-full font-bold shadow-lg flex items-center gap-2 hover:bg-cyan-500 transition-all"><Icons.Camera/> {timer ? 'CAPTURING...' : 'CAPTURE (3s)'}</button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const App = () => {
         const [uploads, setUploads] = useState({ front: null, side: null, back: null });
+	const [isModelLoading, setIsModelLoading] = useState(false);
 	const [cameraActive, setCameraActive] = useState(null);
         const [system, setSystem] = useState({ detector: null });
         const [status, setStatus] = useState({ logs: ["System Initializing..."], analyzing: false });
@@ -2374,12 +2359,13 @@ const ShareReport = ({ audit, onClose }) => {
         const [activeProgram, setActiveProgram] = useState(null);
         const [history, setHistory] = useState([]);
         const [symptoms, setSymptoms] = useState([]); 
+	const ready = Object.values(uploads).some(u => u) || symptoms.length > 0;
 	const [userPrefs, setUserPrefs] = useState({ lowImpact: false, noJumps: false, noEquipment: false });
         const [tab, setTab] = useState('dashboard');
         const [showReader, setShowReader] = useState(null);
         
         // New Panel State
-        const [rightPanelTab, setRightPanelTab] = useState('data'); // 'data' or 'twin'
+        const [rightPanelTab, setRightPanelTab] = useState('twin'); // 'data' or 'twin'
         const [chatHistory, setChatHistory] = useState([]);
         
         // DAILY HABIT STATE
@@ -2403,6 +2389,8 @@ const ShareReport = ({ audit, onClose }) => {
         const [showShare, setShowShare] = useState(false);
 	const [showProtocolButton, setShowProtocolButton] = useState(false);
 	const [currentTheme, setCurrentTheme] = useState('power');  // Weekly theme: power, recovery, mobility
+	const [postAnalysisMode, setPostAnalysisMode] = useState(false);
+
 	const debouncedRunAnalysis = React.useCallback(() => {
             if (status.analyzing) return; // Ignore duplicates
             requestAnimationFrame(runAnalysis); // Queue after UI paints (smooth!)
@@ -2442,72 +2430,82 @@ const ShareReport = ({ audit, onClose }) => {
         };
 
         useEffect(() => {
-        const init = async () => {
-            addLog("Warming AI Engine..."); 
+    const init = async () => {
+        addLog("Warming AI Engine..."); // User sees this immediately
 
-            // Helper to load script safely
-            const loadScript = (src) => new Promise((resolve, reject) => {
-                if (document.querySelector(`script[src="${src}"]`)) return resolve();
-                const s = document.createElement('script');
-                s.src = src;
-                s.crossOrigin = 'anonymous'; // Critical for canvas image data
-                s.onload = resolve;
-                s.onerror = reject;
-                document.head.appendChild(s);
-            });
+        // Step 1: Load TF.js if missing (async, non-blocking)
+        if (!window.tf) {
+            const tfScript = document.createElement('script');
+            tfScript.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
+            tfScript.async = true;
+            document.head.appendChild(tfScript);
+            await new Promise(resolve => { tfScript.onload = resolve; });
+            addLog("TensorFlow Loaded");
+        }
 
-            try {
-                // 1. Load TensorFlow JS
-                if (!window.tf) await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js');
-                
-                // 2. Load MediaPipe Tasks Vision (The specific version that works with the code)
-                if (!window.vision) await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js');
-                
-                addLog("Neural Networks Loaded.");
+        // Step 2: Load Pose Detection if missing
+        if (!window.poseDetection) {
+            const pdScript = document.createElement('script');
+            pdScript.src = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3';
+            pdScript.async = true;
+            document.head.appendChild(pdScript);
+            await new Promise(resolve => { pdScript.onload = resolve; });
+            addLog("Pose Detection Loaded");
+        }
 
-                // 3. Initialize Detector
-                const vision = window.vision;
-                if (vision) {
-                    const poseLandmarker = await vision.PoseLandmarker.createFromOptions(vision.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm'), {
-                        baseOptions: {
-                            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
-                            delegate: "GPU"
-                        },
-                        runningMode: "IMAGE",
-                        numPoses: 1
-                    });
+ // --- UPGRADE TO MEDIAPIPE POSE (More Accurate in 2025) ---
+if (!window.mediaPipePose) {
+    addLog("Loading MediaPipe Pose (higher precision)...");
+    const mpScript = document.createElement('script');
+    mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1677925678/pose.js';
+    mpScript.crossOrigin = 'anonymous';
+    document.head.appendChild(mpScript);
+    await new Promise(r => mpScript.onload = r);
 
-                    // Wrapper to match previous architecture
-                    const net = {
-                        estimatePoses: async (image) => {
-                            try {
-                                const results = await poseLandmarker.detect(image);
-                                if (!results || results.landmarks.length === 0) return [];
-                                return [{
-                                    keypoints: results.landmarks[0].map((lm, i) => ({
-                                        x: lm.x,
-                                        y: lm.y,
-                                        score: lm.visibility || 1.0,
-                                        name: i.toString()
-                                    }))
-                                }];
-                            } catch (e) {
-                                console.warn("Pose detection glitch:", e);
-                                return [];
-                            }
-                        }
-                    };
-                    
-                    setSystem(prev => ({ ...prev, detector: net }));
-                    addLog("System Ready. Upload or Scan.");
-                }
-            } catch (error) {
-                console.error(error);
-                addLog("Error initializing AI. Check connection.");
-            }
-        };
-        init();
-    }, []);
+    const mpVisionScript = document.createElement('script');
+    mpVisionScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js';
+    mpVisionScript.crossOrigin = 'anonymous';
+    document.head.appendChild(mpVisionScript);
+    await new Promise(r => mpVisionScript.onload = r);
+}
+
+// Create MediaPipe Pose detector
+const vision = window.vision;
+const poseLandmarker = await vision.PoseLandmarker.createFromOptions({
+    baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
+        delegate: "GPU"
+    },
+    runningMode: "IMAGE",
+    numPoses: 1
+});
+
+net = {
+    estimatePoses: async (image) => {
+        const results = await poseLandmarker.detect(image);
+        if (results.landmarks.length === 0) return [];
+        // Convert to MoveNet-like format for compatibility
+        const keypoints = results.landmarks[0].map((lm, i) => ({
+            x: lm.x,
+            y: lm.y,
+            score: lm.visibility || 1.0,
+            name: ['nose','left_eye_inner','left_eye','left_eye_outer','right_eye_inner','right_eye','right_eye_outer','left_ear','right_ear','mouth_left','mouth_right','left_shoulder','right_shoulder','left_elbow','right_elbow','left_wrist','right_wrist','left_pinky','right_pinky','left_index','right_index','left_thumb','right_thumb','right_thumb','left_hip','right_hip','left_knee','right_knee','left_ankle','right_ankle','left_heel','right_heel','left_foot_index','right_foot_index'][i] || 'unknown'
+        }));
+        return [{ keypoints }];
+    }
+};
+
+        // Rest of your existing init logic (localStorage, etc.)
+        const saved = localStorage.getItem('biometric_data_v82'); 
+        if(saved) {
+            // ... (unchanged)
+        } else {
+            // ... (unchanged)
+        }
+    };
+    init();
+	setStatus(prev => ({ ...prev, logs: [] })); 
+}, []);
 
         // NEW: Streak Calculation
         const calculateStreak = (hist) => {
@@ -2578,6 +2576,43 @@ const ShareReport = ({ audit, onClose }) => {
         const lower = input.toLowerCase();
 
         let response = "";
+const PART_ANALYSIS = {
+    head: {
+        title: "Cervical & Superficial Back Line",
+        intro: (grade, val) => `Your head posture scored ${val}% (${grade}). This is the foundation of everything — when the head drifts forward, it compresses the entire spine and disconnects your core.`,
+        rootCause: "Forward head posture usually comes from prolonged sitting and shallow breathing. The deep neck flexors shut off, and the upper traps take over.",
+        fix: "Head loading is your fastest path to correction. It reflexively activates the deep spinal stabilizers that conscious effort can't reach.",
+        insight: "The head is the steering wheel of the body. When it's aligned over the spine, the glutes and lats connect instantly through the posterior oblique sling."
+    },
+    shoulders: {
+        title: "Deep Front Arm Line & Scapular Stability",
+        intro: (grade, val) => `Shoulders at ${val}% (${grade}). Rounded or elevated shoulders mean your scapula isn't gliding properly on the ribcage.`,
+        rootCause: "Modern life shortens the pectorals and weakens the lower traps/rhomboids. This disconnects the arm from the core.",
+        fix: "Standing pulls and chest openers restore scapular retraction and external rotation — re-linking the arms to the torso.",
+        insight: "The shoulder isn't a ball-and-socket — it's a rhythm. The scapula must move freely on the ribcage for true power transfer."
+    },
+    spine: {
+        title: "Deep Front Line & Core Integration",
+        intro: (grade, val) => `Spinal integrity: ${val}% (${grade}). This is your central column — when it's compressed, every sling loses tension.`,
+        rootCause: "Loss of natural curves (usually from sitting) collapses the deep front line and turns off the diaphragm's hydraulic pump.",
+        fix: "Diaphragmatic breathing + spinal waves restore segmental motion and decompress the discs.",
+        insight: "The spine isn't a stack — it's a wave. True strength comes from segmental articulation, not rigid bracing."
+    },
+    hip: {
+        title: "Lateral Line & Pelvic Stability",
+        intro: (grade, val) => `Hip alignment: ${val}% (${grade}). When the hips shift or tilt, one side of the body bears more load than the other.`,
+        rootCause: "Sitting shortens hip flexors and weakens glute medius, causing lateral pelvic tilt and false tightness in the lower back.",
+        fix: "Split squats and body bounce restore symmetrical loading and lateral fascial elasticity.",
+        insight: "The hips are the engine. Asymmetry here cascades upward to the spine and downward to the knees."
+    },
+    gait: {
+        title: "Spiral Line & Elastic Recoil",
+        intro: (grade, val) => `Gait & rotational power: ${val}% (${grade}). This measures your ability to store and release elastic energy through contralateral movement.`,
+        rootCause: "Modern shoes and flat surfaces have killed the hyperarch and windlass mechanism. The foot can't recoil → no free power.",
+        fix: "Plantar release, hyperarch hops, and coiling restore the foot-glute connection and spiral line tension.",
+        insight: "Humans are rotational animals. Straight-line movement is inefficient. The spiral line is where athleticism lives."
+    }
+};
 
         // === MASTER-LEVEL KNOWLEDGE GRAPH (NO NAMES, PURE INSIGHTS) ===
         const knows = {
@@ -2719,55 +2754,23 @@ const connections = [
 };
 // ... inside the App component return statement ...
 
-<div className="upload-grid flex-1">
-    {['front', 'side', 'back'].map(view => (
-<div key={view} className={`upload-slot relative ${uploads[view] ? 'active' : ''} ${status.analyzing ? 'analyzing' : ''}`}>
-            {uploads[view] ? (
-                <div className="w-full h-full relative group" onClick={() => uploadRefs[view].current.click()}>
-                    
-                    {/* 2. FIX APPLIED HERE: Added 'object-contain' to canvas className */}
-                    {/* This ensures the canvas respects aspect ratio and aligns with the image */}
-                    
-                    <img 
-                        ref={el => { if(el) uploadRefs[view].current = el; }} 
-                        src={uploads[view].url} 
-                        className="opacity-0 absolute inset-0 w-full h-full object-contain" 
-                        crossOrigin="anonymous" 
-                        alt="analysis-source"
-                    />
-                    
-                    {/* We hide the img (opacity-0) and let the canvas render everything to guarantee alignment */}
-                    <canvas 
-                        id={`canvas-${view}`} 
-                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                    />
-
-                    <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1"><Icons.Check/> LOADED</div>
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-bold uppercase tracking-widest">Click to Change</div>
-                </div>
-            ) : (
-                // ... empty slot state ...
-                <div className="flex flex-col items-center gap-3 opacity-60 hover:opacity-100 transition-opacity">
-                     <div className="flex gap-4">
-                        <button onClick={() => uploadRefs[view].current.click()} className="p-4 rounded-full bg-slate-800 text-cyan-400 hover:bg-slate-700 hover:scale-110 transition-all border border-slate-700 shadow-lg" title="Upload Photo"><Icons.Plus /></button>
-                        <button onClick={() => setCameraActive(view)} className="p-4 rounded-full bg-slate-800 text-emerald-400 hover:bg-slate-700 hover:scale-110 transition-all border border-slate-700 shadow-lg" title="Use Camera"><Icons.Camera /></button>
-                    </div>
-                    <span className="text-xs font-bold tracking-widest uppercase text-slate-500">{view} VIEW</span>
-                </div>
-            )}
-            <div className="scanner-line"></div>
-            <input type="file" ref={uploadRefs[view]} className="hidden" accept="image/*" onChange={(e) => handleFile(e, view)} />
-        </div>
-    ))}
-</div>
 
     const runAnalysis = async () => {
-	SFX.scan();
         let net = system.detector;
         
-        // 1. INITIALIZE ENGINE
+        // 1. SHOW LOADING STATE IMMEDIATELY
+        setStatus(prev => ({
+            ...prev, 
+            analyzing: true, 
+            logs: ["Initiating Neural Core V85...", ...prev.logs]
+        }));
+        
+        // 2. THE 50MS PAUSE (Lets the browser draw the "Analyzing" bar before freezing)
+        await new Promise(r => setTimeout(r, 2000)); 
+
+        // 3. INITIALIZE ENGINE IF MISSING
         if (!net) {
-            addLog("Initializing Neural Engine...");
+            addLog("Waking up Neural Engine...");
             if (!window.tf) {
                 const tfScript = document.createElement('script');
                 tfScript.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js';
@@ -2781,37 +2784,41 @@ const connections = [
                 await new Promise(resolve => pdScript.onload = resolve);
             }
             
-            if (!system.detector) {
-                 const vision = window.vision;
-                 if (vision) {
-                     const poseLandmarker = await vision.PoseLandmarker.createFromOptions({
-                        baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task', delegate: "GPU" },
-                        runningMode: "IMAGE", numPoses: 1
-                     });
-                     net = { estimatePoses: async (img) => {
+            const vision = window.vision;
+            if (vision) {
+                const poseLandmarker = await vision.PoseLandmarker.createFromOptions({
+                    baseOptions: { 
+                        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task', 
+                        delegate: "GPU" 
+                    },
+                    runningMode: "IMAGE", 
+                    numPoses: 1
+                });
+                net = { 
+                    estimatePoses: async (img) => {
                         const res = await poseLandmarker.detect(img);
-                        return res.landmarks.length > 0 ? [{ keypoints: res.landmarks[0].map((lm, i) => ({ x: lm.x, y: lm.y, score: lm.visibility, name: i })) }] : [];
-                     }};
-                     setSystem(prev => ({...prev, detector: net}));
-                 }
+                        return res.landmarks.length > 0 ? [{ 
+                            keypoints: res.landmarks[0].map((lm, i) => ({ 
+                                x: lm.x, y: lm.y, score: lm.visibility, name: i 
+                            })) 
+                        }] : [];
+                    }
+                };
+                setSystem(prev => ({...prev, detector: net}));
             }
         }
 
+        // 4. PREPARE FOR DATA
         const views = Object.keys(uploads).filter(k => uploads[k] && uploads[k].url);
-        if(views.length === 0 && symptoms.length === 0) { addLog("Upload at least one photo."); return; }
+        if(views.length === 0 && symptoms.length === 0) { 
+            addLog("Upload at least one photo."); 
+            setStatus(prev => ({...prev, analyzing: false}));
+            return; 
+        }
 
-        // 2. ANIMATION
-        setStatus(prev => ({...prev, analyzing: true, logs: ["Running V600 Aggressive Inference...", ...prev.logs]}));
-        await new Promise(r => setTimeout(r, 2000)); 
-
-        // 3. AGGRESSIVE SCORING ENGINE
-        // Initialize to NULL. If these stay null, we know the scan failed.
         let rawScores = { head: [], shoulders: [], spine: [], hip: [], gait: [] };
         let detectedIssues = new Set(); 
 
-        // Helper: The Deviation Calculator
-        // A deviation of 0.00 (0%) is perfect -> 100
-        // A deviation of 0.05 (5%) is bad -> 50
         const rateMetric = (deviation, sensitivity) => {
             const val = 100 - (deviation * sensitivity);
             return Math.max(40, Math.min(100, val));
@@ -2953,35 +2960,48 @@ const connections = [
             hip: { val: final.hip, grade: getGrade(final.hip) }
         };
 
-        setAudit(newAudit);
+        // --- START DRAMATIC FINALE ---
+        addLog("Synchronizing Biometric Data...");
         
-        // Confetti (Always fire)
+        // This is the "Dramatic Pause". 3000 = 3 seconds of extra scanning time.
+        await new Promise(r => setTimeout(r, 2000)); 
+
+        setAudit(newAudit);
+        setHistory([newAudit, ...history]);
+        setStatus(prev => ({ ...prev, analyzing: false })); 
+        
+        addLog(`Analysis Complete. Bio-Integrity: ${totalScore}%`);
+        
+        if (history.length === 0) { 
+            setTab('results');
+        } else {
+            setTab('dashboard'); 
+        }
+
+        // Trigger Premium Effects
+        SFX.success();
+        generateProgram(); 
+        setShowProtocolButton(true);
+        setRightPanelTab('twin'); 
+        setPostAnalysisMode(true); 
+
+        // Confetti Burst
         const confettiContainer = document.createElement('div');
         confettiContainer.style.position = 'fixed';
         confettiContainer.style.inset = '0';
         confettiContainer.style.pointerEvents = 'none';
         confettiContainer.style.zIndex = '100';
         document.body.appendChild(confettiContainer);
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 70; i++) {
             const c = document.createElement('div');
             c.className = 'confetti';
             c.style.left = Math.random() * 100 + 'vw';
-            c.style.background = ['#22d3ee', '#06b6d4', '#0891b2'][Math.floor(Math.random() * 3)];
-            c.style.animationDelay = Math.random() * 3 + 's';
+            c.style.background = ['#22d3ee', '#fff', '#0ea5e9'][Math.floor(Math.random() * 3)];
+            c.style.animationDelay = Math.random() * 2 + 's';
             confettiContainer.appendChild(c);
         }
         setTimeout(() => confettiContainer.remove(), 4000);
-        
-        setHistory([newAudit, ...history]);
-        setStatus(prev => ({ ...prev, analyzing: false })); 
-        addLog(`Analysis Complete. Bio-Integrity: ${totalScore}%`);
-if (totalScore >= 60) {
-            SFX.success(); // Plays the "Success" chime
-        } else {
-            SFX.error();   // Plays the "Failure" buzz if score is low
-        }
-        generateProgram(); 
-        setShowProtocolButton(true);
+        // --- END DRAMATIC FINALE ---
     };
                // --- HYPER-PERSONALIZED STRATIFIED ENGINE (V90.0 SCORING MATRIX) ---
     const generateProgram = () => {
@@ -3184,26 +3204,50 @@ const loadPreset = (presetName) => {
         const updateGoal = () => setShowGoalSetter(true);
 
         return (
-            <div className="workspace bg-slate-950 text-white selection:bg-cyan-500 selection:text-black">
+            <div className={`workspace bg-slate-950 text-white selection:bg-cyan-500 selection:text-black ${postAnalysisMode ? 'post-analysis' : ''}`}>
 	{cameraActive && <CameraCapture onClose={() => setCameraActive(null)} onCapture={(url) => {
                     setUploads(prev => ({ ...prev, [cameraActive]: { url, analyzed: false } }));
                     setCameraActive(null);
                     addLog(`Captured ${cameraActive} view via Camera`);
                 }} />}
+{isModelLoading && (
+    <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center backdrop-blur-xl animate-popIn">
+        <div className="w-20 h-20 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+        <div className="text-cyan-400 font-black text-xl tracking-widest animate-pulse">DOWNLOADING NEURAL CORE V85...</div>
+        <div className="text-slate-500 text-xs mt-2 uppercase">Initial load may take 5-10 seconds</div>
+    </div>
+)}
                 {showReader && <ReaderMode item={showReader} onClose={() => setShowReader(null)} />}
                 {showGoalSetter && <GoalSetter currentGoal={currentGoal} onSave={saveGoal} onClose={() => setShowGoalSetter(false)} />}
                 {showShare && <ShareReport audit={audit} onClose={() => setShowShare(false)} />}
-                <div className="viewport">
+                <div className={`viewport ${status.analyzing ? 'analyzing-blur-fix' : ''}`}>
 <div className="text-center mb-8 px-6">
-    <h1 className="text-4xl md:text-5xl font-black text-white mb-4 tracking-tight">
-        Fix Your Posture in 60 Seconds
-    </h1>
-    <p className="text-lg text-slate-300 mb-6 max-w-2xl mx-auto">
-        Upload 1-3 photos (front, side, back) → Get an instant biomechanical analysis + personalized training protocol based on decentralized movement methods.
+    <h1 className="text-5xl md:text-5xl font-black text-white mb-6 tracking-tight bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent animate-popIn">
+    MOVEMENT MECHANICS
+</h1>
+    <p className="text-xl md:text-2xl text-slate-300 mb-7 max-w-3xl mx-auto leading-relaxed opacity-90">
+        Upload 1-3 photos (front, side, back) → Get an instant biomechanical analysis + personalized training protocol.
     </p>
     <div className="text-sm text-cyan-400 font-bold">
         Completely free • Used by athletes & desk workers alike
     </div>
+{postAnalysisMode && audit && (
+    <div className="mb-12 p-6 md:p-10 bg-gradient-to-r from-purple-900/40 via-cyan-900/40 to-blue-900/40 rounded-3xl border-2 border-cyan-500/50 text-center animate-popIn shadow-2xl shadow-cyan-900/50 mx-2 md:mx-8 overflow-hidden">
+        <p className="text-sm md:text-xl font-bold text-cyan-300 mb-4 uppercase tracking-widest opacity-80">Today's Primary Limitation</p>
+        
+        <div className="flex justify-center items-center py-2">
+            <h2 className="text-3xl sm:text-4xl md:text-6xl font-black text-white leading-tight tracking-tight uppercase">
+                <span style={{ display: 'block', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+                    {Object.keys(audit).find(k => audit[k].grade === 'F' || audit[k].grade === 'D')?.replace(/_/g, ' ').toUpperCase() || 'PERFECT BALANCE'}
+                </span>
+            </h2>
+        </div>
+
+        <p className="text-base md:text-xl text-slate-300 max-w-2xl mx-auto mt-6 leading-relaxed italic opacity-90">
+            Your entire protocol is laser-focused on resolving this first.
+        </p>
+    </div>
+)}
 </div>
                     {/* HEADER NAV - ENHANCED with Progress Tab */}
                     <div className="flex justify-between items-center mb-6 no-print">
@@ -3214,21 +3258,31 @@ const loadPreset = (presetName) => {
                         </div>
                         {tab === 'dashboard' && <button 
     onClick={runAnalysis} 
-    disabled={status.analyzing}
-    className="btn-primary w-auto shadow-lg shadow-cyan-900/50 text-lg py-4 px-8"
->
-    {status.analyzing 
-        ? "ANALYZING POSE..." 
-        : (uploads.front || uploads.side || uploads.back || symptoms.length > 0)
-            ? "FREE ANALYSIS"
-            : "SELECT SYMPTOMS OR UPLOAD PHOTO"
+    disabled={status.analyzing || !ready}
+    className={`
+    btn-primary 
+    w-full max-w-2xl mx-auto 
+    text-3xl py-8 
+    rounded-3xl 
+    font-black 
+    uppercase 
+    tracking-widest 
+    shadow-2xl shadow-cyan-900/60
+    bg-size-200
+    ${ready && !status.analyzing 
+        ? 'animate-pulse-slow bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-pos-0 hover:bg-pos-100' 
+        : 'opacity-60 bg-gradient-to-r from-slate-600 to-slate-700'
     }
+    transition-all duration-1000
+`}
+>
+    {status.analyzing ? "NEURAL ANALYSIS IN PROGRESS..." : ready ? "ANALYZE MY POSTURE NOW" : "UPLOAD PHOTOS TO BEGIN"}
 </button>}
                     </div>
                     
                     {tab === 'dashboard' ? (
                         <>
-                            {/* NEW: SYMPTOM INTAKE */}
+                                                        {/* SYMPTOM CHIPS - stays at top */}
                             <div className="mb-6 no-print">
                                 <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">Pain / Symptoms (Select all that apply)</div>
                                 <div className="flex flex-wrap gap-2">
@@ -3239,51 +3293,90 @@ const loadPreset = (presetName) => {
                                     ))}
                                 </div>
                             </div>
-
-                            <div className="upload-grid flex-1">
-{['front', 'side', 'back'].map(view => (
-    <div key={view} className={`upload-slot ${uploads[view] ? 'active' : ''} ${status.analyzing ? 'analyzing' : ''}`}>
-       {uploads[view] ? (
-    <div className="w-full h-full relative">
-        <img 
-            ref={el => { if(el) uploadRefs[view].current = el; }} 
-            src={uploads[view].url} 
-            className="absolute inset-0 w-full h-full object-cover opacity-0" 
-            crossOrigin="anonymous" 
-            alt={`${view} view`}
+<div className="mb-8 flex justify-center gap-8 no-print">
+    <label className="flex items-center gap-3 cursor-pointer">
+        <input 
+            type="checkbox" 
+            checked={useEquipment} 
+            onChange={(e) => setUseEquipment(e.target.checked)}
+            className="w-6 h-6 rounded text-cyan-500 focus:ring-cyan-500"
         />
-        <canvas 
-            id={`canvas-${view}`} 
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+        <span className="text-sm font-bold text-slate-300">Use Equipment</span>
+    </label>
+    <label className="flex items-center gap-3 cursor-pointer">
+        <input 
+            type="checkbox" 
+            checked={!userPrefs.lowImpact} 
+            onChange={(e) => setUserPrefs(p => ({...p, lowImpact: !e.target.checked}))}
+            className="w-6 h-6 rounded text-orange-500 focus:ring-orange-500"
         />
-        <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 z-20"><Icons.Check/> ANALYZED</div>
-        <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-bold uppercase tracking-widest z-20 cursor-pointer" onClick={() => uploadRefs[view].current.click()}>
-            Click to Change
-        </div>
-    </div>
-) : (
-    <div className="flex flex-col items-center gap-6">
-    <div className="text-6xl opacity-30">📸</div>
-    <div className="text-center">
-        <div className="text-lg font-black text-white mb-2 uppercase">{view} View</div>
-        <div className="text-sm text-slate-400">Stand straight, arms at sides</div>
-    </div>
-    <div className="flex gap-4">
-        <button onClick={() => uploadRefs[view].current.click()} className="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-bold text-sm">
-            Upload Photo
-        </button>
-        <button onClick={() => setCameraActive(view)} className="px-6 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold text-sm">
-            Use Camera
-        </button>
-    </div>
+        <span className="text-sm font-bold text-slate-300">High Intensity Mode</span>
+    </label>
 </div>
-)}
-<div className="scanner-line"></div>
-<input type="file" ref={uploadRefs[view]} className="hidden" accept="image/*" onChange={(e) => handleFile(e, view)} />
-    </div>
-))}
+
+                            {/* THIS MAKES THE 3 BOXES BIG AND NOT CUT OFF */}
+                            <div className="flex-1 upload grid">
+    <div className="upload-grid gap-6 px-4">
+                                    {['front', 'side', 'back'].map(view => (
+                                        <div key={view} className={`upload-slot ${uploads[view] ? 'active' : ''} ${status.analyzing && uploads[view] ? 'analyzing' : ''}`}>
+                                            {uploads[view] ? (
+                                                <div className="w-full h-full relative">
+                                                    <img 
+                                                        ref={el => { if(el) uploadRefs[view].current = el; }} 
+                                                        src={uploads[view].url} 
+                                                        className="absolute inset-0 w-full h-full object-cover opacity-0" 
+                                                        crossOrigin="anonymous" 
+                                                        alt={`${view} view`}
+                                                    />
+                                                    <canvas 
+                                                        id={`canvas-${view}`} 
+                                                        className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+                                                    />
+                                                    <div className="absolute top-2 right-2 bg-emerald-500 text-black text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 z-20"><Icons.Check/> ANALYZED</div>
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-bold uppercase tracking-widest z-20 cursor-pointer" onClick={() => uploadRefs[view].current.click()}>
+                                                        Click to Change
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center h-full gap-8 relative">
+                                                    {/* Silhouette Guide */}
+                                                    <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                                                        <svg viewBox="0 0 200 400" className="w-1/2">
+                                                            <circle cx="100" cy="60" r="30" fill="none" stroke="#22d3ee" strokeWidth="4"/>
+                                                            <rect x="70" y="100" width="60" height="120" rx="20" fill="none" stroke="#22d3ee" strokeWidth="4"/>
+                                                            <line x1="70" y1="140" x2="40" y2="200" stroke="#22d3ee" strokeWidth="4"/>
+                                                            <line x1="130" y1="140" x2="160" y2="200" stroke="#22d3ee" strokeWidth="4"/>
+                                                            <line x1="80" y1="220" x2="70" y2="320" stroke="#22d3ee" strokeWidth="4"/>
+                                                            <line x1="120" y1="220" x2="130" y2="320" stroke="#22d3ee" strokeWidth="4"/>
+                                                        </svg>
+                                                    </div>
+
+                                                    <div className="text-center z-10">
+                                                        <p className="text-3xl font-black text-white mb-2 uppercase tracking-wider">{view}</p>
+                                                        <p className="text-sm text-slate-400">Tap to upload or use camera</p>
+                                                    </div>
+
+                                                    <div className="flex gap-6 z-10">
+                                                        <button onClick={() => uploadRefs[view].current.click()} className="px-8 py-4 bg-cyan-600 hover:bg-cyan-500 rounded-xl font-bold text-lg shadow-lg shadow-cyan-900/50 transition-all hover:scale-105">
+                                                            Upload Photo
+                                                        </button>
+                                                        <button onClick={() => setCameraActive(view)} className="px-8 py-4 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-105">
+                                                            Camera
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div className="scanner-line"></div>
+                                            <input type="file" ref={uploadRefs[view]} className="hidden" accept="image/*" onChange={(e) => handleFile(e, view)} />
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="mt-4 flex gap-4 text-[10px] font-mono text-slate-500 bg-slate-900/50 p-2 rounded border border-slate-800 no-print">{status.logs.map((l,i) => <span key={i}>{l}</span>)}</div>
+
+                            {/* LOGS AT BOTTOM */}
+                            <div className="mt-4 flex gap-4 text-[10px] font-mono text-slate-500 bg-slate-900/50 p-2 rounded border border-slate-800 no-print">
+                                {status.logs.map((l,i) => <span key={i}>{l}<br/></span>)}
+                            </div>
                         </>
                     ) : tab === 'progress' ? (
                         <div className="p-6 space-y-6 overflow-y-auto">
@@ -3316,23 +3409,13 @@ const loadPreset = (presetName) => {
                 
                 {/* RIGHT PANEL - The Value Engine */}
  {/* Removed 'flex flex-col' so it doesn't squeeze the content */}
-<div className="glass-panel flex flex-col"> 
+<div className={`glass-panel flex flex-col ${postAnalysisMode ? 'expanded' : ''}`}> 
     {/* Removed 'shrink-0' because we aren't flexing anymore */}
     <div className="p-6 border-b border-slate-800 bg-slate-900/50 flex-shrink-0 overflow-y-auto max-h-96
 
 ">
                         <div className="flex justify-between items-start mb-2"><div className="text-[10px] font-bold text-cyan-500 uppercase tracking-widest">Structural Score</div></div>
-                        <div className={`text-6xl font-black ${!audit || audit.score > 90 ? 'text-emerald-400' : audit.score > 80 ? 'text-blue-500' : audit.score > 70 ? 'text-yellow-400' : audit.score > 60 ? 'text-orange-400' : 'text-red-400'} tracking-tighter`}>{audit ? audit.score : (history[0]?.score || '--')}
-{/* --- VIRAL TRIGGER BUTTON --- */}
-{audit && (
-    <button 
-        onClick={() => setShowShare(true)}
-        className="mt-4 w-full py-3 bg-gradient-to-r from-emerald-900/40 to-emerald-600/20 border border-emerald-500/50 hover:border-emerald-400 text-emerald-400 font-bold rounded-lg uppercase text-xs tracking-[2px] shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center justify-center gap-2 animate-popIn"
-    >
-        <Icons.Share /> GENERATE VIRAL CARD
-    </button>
-)}
-</div> {/* MY PROTOCOL BUTTON - Appears only after scan */}
+                        <div className={`text-6xl font-black ${!audit || audit.score > 90 ? 'text-emerald-400' : audit.score > 80 ? 'text-blue-500' : audit.score > 70 ? 'text-yellow-400' : audit.score > 60 ? 'text-orange-400' : 'text-red-400'} tracking-tighter`}>{audit ? audit.score : (history[0]?.score || '--')}</div> {/* MY PROTOCOL BUTTON - Appears only after scan */}
 {showProtocolButton && activeProgram && (
     <div className="mt-6 animate-popIn">
         <button 
@@ -3344,7 +3427,16 @@ const loadPreset = (presetName) => {
     </div>
 )}
                         <div className="mt-4 flex gap-2 no-print flex-wrap">
-                            <button onClick={runAnalysis} disabled={status.analyzing} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[10px] font-bold flex items-center gap-2"><Icons.Scan/> RESCAN</button>
+                            <button 
+    onClick={() => {
+        setTab('dashboard'); // Force stay on scanner view
+        runAnalysis();
+    }} 
+    disabled={status.analyzing}
+    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[10px] font-bold flex items-center gap-2"
+>
+    <Icons.Scan/> RESCAN
+</button>
                             <button onClick={() => window.print()} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[10px] font-bold flex items-center gap-2"><Icons.Print/> REPORT</button>
                             <div className="px-2 py-1 bg-slate-800 text-slate-400 rounded text-[10px] font-bold flex items-center gap-2"><Icons.History/> {history.length} SCANS</div> {/* MY PROTOCOL BUTTON - MOVED UP SO IT'S ALWAYS VISIBLE */}
 {audit ? (
@@ -3358,12 +3450,22 @@ const loadPreset = (presetName) => {
             </button>
         </div>
 
+        {audit && (
+    <div className="mt-10 animate-popIn">
         <button 
             onClick={generateProgram} 
-            className="w-full py-5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-lg rounded-xl uppercase tracking-widest shadow-2xl shadow-cyan-900/40 flex items-center justify-center gap-3 transition-all hover:scale-105 no-print"
+            className="w-full py-8 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-700 
+                       hover:from-cyan-400 hover:via-blue-500 hover:to-purple-600 
+                       text-white font-black text-3xl rounded-3xl uppercase tracking-widest 
+                       shadow-2xl shadow-cyan-900/80 
+                       border-4 border-cyan-400/60
+                       transform transition-all duration-700 hover:scale-105 hover:shadow-cyan-500/50"
         >
-            <Icons.List /> MY PROTOCOL
+            <Icons.List className="inline w-10 h-10 mr-4" /> 
+            MY PROTOCOL
         </button>
+    </div>
+)}
     </div>
 ) : null}
                         </div>
@@ -3429,48 +3531,73 @@ const loadPreset = (presetName) => {
                         
                        <div className="h-4"></div>
                     </div> 
-                    {/* NEW: Tabs for Body vs Data */}
-                    <div className="flex border-b border-slate-800 bg-slate-900/30 flex-shrink-0">
-                        <button onClick={()=>setRightPanelTab('data')} className={`flex-1 py-3 text-sm font-bold uppercase ${rightPanelTab==='data' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500'}`}>Report</button>
-                        <button onClick={()=>setRightPanelTab('twin')} className={`flex-1 py-3 text-sm font-bold uppercase ${rightPanelTab==='twin' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-slate-500'}`}>Digital Twin</button>
+                   
+                    <div className="flex-1 p-6 overflow-y-auto bg-slate-950/30 space-y-8">
+    {/* Trend Graph + Report */}
+    <TrendGraph history={history} />
+    <div className="space-y-4">
+        <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">Fascial Integrity Report</div>
+        {!audit && !history[0] ? <div className="text-center text-slate-600 text-xs py-10">Upload photos to begin analysis</div> : (audit || history[0]) && [
+            { label: "Superficial Back Line", sub: "Posture / Extension", data: (audit||history[0]).head, unit: "%", risk: "Restriction" },
+            { label: "Deep Front Arm Line", sub: "Shoulder Stability", data: (audit||history[0]).shoulders, unit: "°", risk: "Tightness" },
+            { label: "Deep Front Line", sub: "Core Foundation", data: (audit||history[0]).spine, unit: "%", risk: "Compression" },
+            { label: "Lateral Line", sub: "Hip & Side Balance", data: (audit||history[0]).hip, unit: "°", risk: "Asymmetry" },
+            { label: "Spiral Line", sub: "Rotational Power", data: (audit||history[0]).gait, unit: "px", risk: "Weak Recoil" }
+        ].map((m, i) => (
+            <div key={i} className="bg-slate-900/50 border border-slate-700/50 p-4 rounded-lg hover:border-slate-600 transition-all group relative overflow-hidden">
+                <div className="flex justify-between items-start mb-2">
+                    <div>
+                        <div className="font-bold text-xs text-slate-200">{m.label}</div>
+                        <div className="text-[9px] text-cyan-500 font-semibold">{m.sub}</div>
                     </div>
+                    <div className={`font-black text-sm ${m.data.grade === 'F' ? 'text-red-400' : m.data.grade === 'D' ? 'text-orange-400' : m.data.grade === 'C' ? 'text-yellow-400' : m.data.grade === 'B' ? 'text-blue-500' : 'text-emerald-400'}`}>{m.data.grade}</div>
+                </div>
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-2">
+                    <div className={`h-full ${m.data.grade === 'F' ? 'bg-red-500' : m.data.grade === 'D' ? 'bg-orange-500' : m.data.grade === 'C' ? 'bg-yellow-500' : m.data.grade === 'B' ? 'bg-blue-500' : 'bg-emerald-500'}`} style={{width: `${Math.min(100, Math.max(10, 100 - m.data.val))}%`}}></div>
+                </div>
+                <div className="flex justify-between items-center">
+                    <div className="text-[10px] text-slate-500 font-mono">INTEGRITY: {m.data.val}{m.unit}</div>
+                    {m.data.grade !== 'A' && <div className="text-[9px] font-bold text-red-400 bg-red-900/20 px-2 py-0.5 rounded border border-red-900/30">{m.risk}</div>}
+                </div>
+            </div>
+        ))}
+    </div>
 
-                    <div className="flex-1 p-6 overflow-y-auto bg-slate-950/30">
-                        {rightPanelTab === 'data' ? (
-                            <>
-                                <TrendGraph history={history} />
-                                <div className="space-y-4">
-                                    <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">Fascial Integrity Report</div>
-                                    {!audit && !history[0] ? <div className="text-center text-slate-600 text-xs py-10">Upload photos to begin analysis</div> : (audit || history[0]) && [
-                                        { label: "Superficial Back Line", sub: "Posture / Extension", data: (audit||history[0]).head, unit: "%", risk: "Restriction" },
-                                        { label: "Deep Front Arm Line", sub: "Shoulder Stability", data: (audit||history[0]).shoulders, unit: "°", risk: "Tightness" },
-                                        { label: "Deep Front Line", sub: "Core Foundation", data: (audit||history[0]).spine, unit: "%", risk: "Compression" },
-                                        { label: "Lateral Line", sub: "Hip & Side Balance", data: (audit||history[0]).hip, unit: "°", risk: "Asymmetry" },
-                                        { label: "Spiral Line", sub: "Rotational Power", data: (audit||history[0]).gait, unit: "px", risk: "Weak Recoil" }
-                                    ].map((m, i) => (
-                                        <div key={i} className="bg-slate-900/50 border border-slate-700/50 p-4 rounded-lg hover:border-slate-600 transition-all group relative overflow-hidden">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <div className="font-bold text-xs text-slate-200">{m.label}</div>
-                                                    <div className="text-[9px] text-cyan-500 font-semibold">{m.sub}</div>
-                                                </div>
-                                                <div className={`font-black text-sm ${m.data.grade === 'F' ? 'text-red-400' : m.data.grade === 'D' ? 'text-orange-400' : m.data.grade === 'C' ? 'text-yellow-400' : m.data.grade === 'B' ? 'text-blue-500' : 'text-emerald-400'}`}>{m.data.grade}</div></div>
-                                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mb-2"><div className={`h-full ${m.data.grade === 'F' ? 'bg-red-500' : m.data.grade === 'D' ? 'bg-orange-500' : m.data.grade === 'C' ? 'bg-yellow-500' : m.data.grade === 'B' ? 'bg-blue-500' : 'bg-emerald-500'}`} style={{width: `${Math.min(100, Math.max(10, 100 - m.data.val))}%`}}></div></div>
-                                            <div className="flex justify-between items-center"><div className="text-[10px] text-slate-500 font-mono">INTEGRITY: {m.data.val}{m.unit}</div>{m.data.grade !== 'A' && <div className="text-[9px] font-bold text-red-400 bg-red-900/20 px-2 py-0.5 rounded border border-red-900/30">{m.risk}</div>}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        ) : (
-                            <div className="h-full flex flex-col gap-6">
-        {/* DIGITAL TWIN AVATAR — ALWAYS AT THE TOP */}
-        <div className="bg-slate-900/60 rounded-2xl p-8 flex flex-col items-center justify-center border border-slate-700 shadow-2xl">
-            <div className="text-lg font-black text-cyan-400 mb-6 uppercase tracking-widest">YOUR DIGITAL TWIN</div>
-            <BioAvatar audit={audit || history[0]} symptoms={symptoms} onPartClick={(part) => handleChat(`Explain my ${part} grade`)} />
-            <p className="text-sm text-slate-400 mt-6 text-center font-medium">Tap any body part for instant analysis</p>
+    {/* Digital Twin + Chat */}
+    <div className="h-full flex flex-col gap-5 relative">
+        {postAnalysisMode && (
+            <div className="absolute inset-0 bg-gradient-to-br from-cyan-900/10 via-transparent to-blue-900/10 pointer-events-none rounded-2xl animate-pulse"></div>
+        )}
+        <div className="bg-slate-900/80 rounded-5xl p-8 flex flex-col items-center justify-center border-4 border-cyan-600/70 shadow-2xl shadow-cyan-900/70">
+            <div className="text-3xl font-black text-cyan-400 mb-5 uppercase tracking-widest">YOUR DIGITAL TWIN</div>
+            <div className="w-full max-w-3xl mx-auto px-6">
+    <BioAvatar 
+        audit={audit || history[0]} 
+        symptoms={symptoms} 
+        onPartClick={(part) => {
+            if (!audit) return;
+            const data = audit[part];
+            const analysis = PART_ANALYSIS[part];
+
+            const message = `
+**${analysis.title}**
+${analysis.intro(data.grade, data.val)}
+
+**Root Cause:** ${analysis.rootCause}
+
+**Immediate Fix:** ${analysis.fix}
+
+**Key Insight:** ${analysis.insight}
+
+Current grade: **${data.grade}** (${data.val}%)
+            `.trim();
+
+            handleChat(message);
+        }} 
+    />
+</div>
+            <p className="text-2xl text-cyan-300 mt-16 text-center font-bold">Tap any glowing region for instant analysis</p>
         </div>
-
-        {/* CHAT — NOW BELOW, SO NO SCROLLING NEEDED TO SEE AVATAR */}
         <div className="flex-1 bg-slate-900/40 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
             <AICoach audit={audit || history[0]} symptoms={symptoms} chatHistory={chatHistory} onSend={handleChat} />
         </div>
