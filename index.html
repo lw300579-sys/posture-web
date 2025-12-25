@@ -3120,14 +3120,15 @@ useEffect(() => {
                     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
                 );
 
-                const poseLandmarker = await mp.PoseLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "IMAGE",
-                    numPoses: 1
-                });
+               const poseLandmarker = await mp.PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
+        // Remove delegate entirely (defaults to CPU) OR explicitly use:
+        // delegate: "CPU"
+    },
+    runningMode: "IMAGE",
+    numPoses: 1
+});
 
                 setSystem(prev => ({ ...prev, detector: poseLandmarker }));
                 setIsModelReady(true);
@@ -4499,3 +4500,4 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 </script>
 </body>
 </html>
+
