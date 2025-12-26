@@ -3948,16 +3948,19 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
             <div ref={viewportRef} className={`viewport ${status.analyzing ? 'analyzing-blur-fix' : ''}`}>
 
 
-                <div className="text-center mb-8 px-6">
-                    <h1 className="text-5xl md:text-5xl font-black text-white mb-6 tracking-tight bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent animate-popIn">
+                <div className="text-center px-6">
+                    <h1 className="text-5xl md:text-6xl font-black text-white mb-4 tracking-tight bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent animate-popIn">
                         MOVEMENT MECHANICS
                     </h1>
-                    <p className="text-xl md:text-2xl text-slate-300 mb-7 max-w-3xl mx-auto leading-relaxed opacity-90">
+                    <p className="text-xl md:text-2xl text-slate-300 mb-4 max-w-5xl mx-auto leading-relaxed opacity-90">
                         Upload photos → Get an instant biomechanical analysis + personalized training protocol.
                     </p>
-                    <div className="text-sm text-cyan-400 font-bold">
-                        Completely free • Used by athletes & desk workers alike
-                    </div>
+
+<div className="text-center mb-8">
+    <p className="text-lg text-cyan-400 font-medium tracking-wide">
+        Completely free • 100% private (nothing leaves your browser)
+    </p>
+</div>
                     {postAnalysisMode && audit && (
                         <div className="mb-12 p-6 md:p-10 bg-gradient-to-r from-purple-900/40 via-cyan-900/40 to-blue-900/40 rounded-3xl border-2 border-cyan-500/50 text-center animate-popIn shadow-2xl shadow-cyan-900/50 mx-2 md:mx-8 overflow-hidden">
                             <p className="text-sm md:text-xl font-bold text-cyan-300 mb-4 uppercase tracking-widest opacity-80">Today's Primary Limitation</p>
