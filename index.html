@@ -2888,9 +2888,24 @@ const ShareReport = ({ audit, symptoms, onClose }) => {
                     <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-cyan-900/20 to-transparent pointer-events-none"></div>
 
                     <div className="relative z-10">
-                        <div className="text-xs font-black text-cyan-400 tracking-[0.3em] mb-2">BIOMECHANICS REPORT</div>
-                        <div className="text-6xl font-black text-white mb-2">{audit.score}</div>
-                        <div className="text-sm text-slate-400 mb-6 uppercase">Structural Integrity</div>
+    <div className="text-xs font-black text-cyan-400 tracking-[0.3em] mb-6">BIOMECHANICS REPORT</div>
+    
+    {/* VIRAL HOOK: SPLIT SCORE VIEW */}
+    <div className="flex justify-center items-center gap-6 mb-8">
+        <div className="text-center">
+            <div className="text-5xl font-black text-white tracking-tighter">{audit.score}</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Integrity</div>
+        </div>
+        <div className="w-px h-12 bg-slate-700"></div>
+        <div className="text-center">
+            <div className={`text-5xl font-black tracking-tighter ${audit.bioAge > 30 ? 'text-red-500' : 'text-emerald-400'}`}>
+                {audit.bioAge}
+            </div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Bio-Age</div>
+        </div>
+    </div>
+
+    {/* Reuse the BioAvatar Component! */}
 
                         {/* Reuse the BioAvatar Component! */}
                         <div className="w-32 mx-auto mb-6">
@@ -3435,25 +3450,35 @@ useEffect(() => {
         let rawScores = { head: [], shoulders: [], spine: [], hip: [], gait: [] };
         let detectedIssues = new Set();
 
+// Calculates rotation in degrees relative to the camera plane
+const calculateTorsion = (p1, p2) => {
+    if (!p1 || !p2) return 0;
+    const width = Math.abs(p1.x - p2.x);
+    const depth = Math.abs(p1.z - p2.z); 
+    // Arctan of depth/width gives the angle of rotation
+    return Math.atan2(depth, width) * (180 / Math.PI);
+};
 
-        // ELITE BIOMECHANICAL SCORING ENGINE (V95.0)
-        const rateMetric = (point1, point2, axis = 'y', sensitivity = 3000) => {
-            if (!point1 || !point2) return 100;
 
-            // AXIAL DIFFERENTIAL: The raw gap on a specific plane
-            const diff = Math.abs(point1[axis] - point2[axis]);
+        // ELITE BIOMECHANICAL ENGINE V2 (Z-Depth Compensated)
+const rateMetric = (point1, point2, axis = 'y', sensitivity = 3000) => {
+    if (!point1 || !point2) return 100;
 
-            // 3D SPATIAL COMPENSATION: 
-            // We use the Z-depth to see if the deviation is caused by perspective
-            // FIXED: Handle missing Z-coordinates safely
-            const zDepthComp = (point1.z !== undefined && point2.z !== undefined) ? Math.abs(point1.z - point2.z) * 0.5 : 0;
+    // 1. Raw 2D Differential (What the camera sees)
+    const visualDelta = Math.abs(point1[axis] - point2[axis]);
 
-            // Adjusted deviation (The 'Truth' value)
-            const trueDev = Math.max(0, diff - (zDepthComp * 0.2));
+    // 2. The Z-Depth Delta (How far back one point is vs the other)
+    // We use a 0.5 multiplier to normalize standard webcam FOV distortion
+    const zDelta = Math.abs((point1.z || 0) - (point2.z || 0)) * 0.5;
 
-            const score = 100 - (trueDev * sensitivity);
-            return Math.max(40, Math.min(100, Math.floor(score)));
-        };
+    // 3. Angular Compensation (The "Truth")
+    // If zDelta is high, visualDelta is exaggerated by perspective. We subtract the noise.
+    const trueDeviation = Math.max(0, visualDelta - (zDelta * 0.8));
+
+    // 4. Score Calculation
+    const score = 100 - (trueDeviation * sensitivity);
+    return Math.max(40, Math.min(100, Math.floor(score)));
+};
 
         try {
             for (const view of views) {
@@ -3503,7 +3528,7 @@ useEffect(() => {
                     // MediaPipe Heavy is 3x more sensitive to Y-axis differences than standard models
                     if (pelvicTilt > 0.01) {
                         detectedIssues.add("Functional Hip Hike");
-                        rawScores.hip.push(rateMetric(landmarks3D[23], landmarks3D[24], 'y', 3000)); // Increased sensitivity for 'Best in World' precision
+                        rawScores.hip.push(rateMetric(landmarks3D[23], landmarks3D[24], 'y', 2000)); // Increased sensitivity for 'Best in World' precision
                     }
                 }
 
@@ -3523,26 +3548,26 @@ useEffect(() => {
                         if (valid(kps[8]) && valid(kps[12])) {
                             const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3)); // Fallback hip
                             const headDev = Math.abs(kps[8].x - kps[12].x) / torsoH;
-                            if (headDev > 0.05) flags.push({ class: 'forward_head', conf: headDev * 2 });
+                            if (headDev > 0.08) flags.push({ class: 'forward_head', conf: headDev * 2 });
                         }
 
                         // Scoliosis Risk: Shoulder (11/12) or hip (23/24) Y-diff >3%
                         const shYDiff = valid(kps[11]) && valid(kps[12]) ? Math.abs(kps[11].y - kps[12].y) : 0;
                         const hipYDiff = valid(kps[23]) && valid(kps[24]) ? Math.abs(kps[23].y - kps[24].y) : 0;
                         const curveRisk = Math.max(shYDiff, hipYDiff);
-                        if (curveRisk > 0.03) flags.push({ class: 'scoliosis_risk', conf: curveRisk * 20 });
+                        if (curveRisk > 0.06) flags.push({ class: 'scoliosis_risk', conf: curveRisk * 20 });
 
                         // Pelvic Tilt: Hip (24) ahead/behind ankle (28) by >4%
                         if (valid(kps[24]) && valid(kps[28])) {
                             const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3));
                             const tiltDev = Math.abs(kps[24].x - kps[28].x) / torsoH;
-                            if (tiltDev > 0.04) flags.push({ class: 'pelvic_tilt', conf: tiltDev * 20 });
+                            if (tiltDev > 0.07) flags.push({ class: 'pelvic_tilt', conf: tiltDev * 20 });
                         }
 
                         // Valgus Knees: Knee (26) inward of hip (24)/ankle (28) by >5%
                         if (valid(kps[24]) && valid(kps[26]) && valid(kps[28])) {
                             const kneeIn = Math.abs(kps[26].x - ((kps[24].x + kps[28].x) / 2));
-                            if (kneeIn > 0.05) flags.push({ class: 'valgus_knees', conf: kneeIn * 15 });
+                            if (kneeIn > 0.08) flags.push({ class: 'valgus_knees', conf: kneeIn * 15 });
                         }
 
                         // Return highest conf flag (or normal)
@@ -3567,32 +3592,44 @@ useEffect(() => {
                     addLog("Local AI Classifier Skipped");
                 }
 
-                // --- FRONT VIEW: ELITE 3D ANALYSIS ---
-                const p = (idx) => keypoints[idx]; // Local helper for the current scan
-                if (view === 'front') {
-                    const lSh = p(11), rSh = p(12), lHip = p(23), rHip = p(24);
+              // --- FRONT VIEW: ELITE 3D ANALYSIS (V2) ---
+const p = (idx) => keypoints[idx]; 
+if (view === 'front') {
+    // Use 3D Landmarks for Z-depth access
+    const lSh = landmarks3D[11], rSh = landmarks3D[12];
+    const lHip = landmarks3D[23], rHip = landmarks3D[24];
 
-                    // 1. SCAPULAR SYMMETRY (Shoulder Level)
-                    if (valid(lSh) && valid(rSh)) {
-                        // High Sensitivity (3500) for elite precision
-                        const s = rateMetric(lSh, rSh, 'y', 3500);
-                        rawScores.shoulders.push(s);
+    // 1. SHOULDER ANALYSIS
+    if (valid(lSh) && valid(rSh)) {
+        const torsion = calculateTorsion(lSh, rSh);
+        
+        // If user is rotated > 15 degrees, the scan is invalid for symmetry
+        if (torsion > 15) {
+            addLog(`⚠ Severe Body Rotation Detected (${torsion.toFixed(1)}°). Please face forward.`);
+            detectedIssues.add("Severe Rotation");
+            // Heavy penalty for poor setup, or skip grading to avoid false positive
+            rawScores.shoulders.push(65); 
+        } else {
+            // Use our new Z-Compensated Truth Calculator
+            const score = rateMetric(lSh, rSh, 'y', 2000);
+            rawScores.shoulders.push(score);
+            if (torsion > 5) addLog(`Compensating for ${torsion.toFixed(1)}° shoulder twist...`);
+        }
+    }
 
-                        // Detecting "Transverse Flare" (Shoulder twisting)
-                        const twist = Math.abs(lSh.z - rSh.z);
-                        if (twist > 0.08) detectedIssues.add("Shoulder Torsion");
-                    }
-
-                    // 2. PELVIC HORIZON (Hip Level)
-                    if (valid(lHip) && valid(rHip)) {
-                        const s = rateMetric(lHip, rHip, 'y', 3200);
-                        rawScores.hip.push(s);
-
-                        // If one hip is significantly closer (Z-axis), it's a Pelvic Rotation
-                        const rotation = Math.abs(lHip.z - rHip.z);
-                        if (rotation > 0.05) detectedIssues.add("Pelvic Rotation");
-                    }
-                }
+    // 2. PELVIC HORIZON
+    if (valid(lHip) && valid(rHip)) {
+        const hipTorsion = calculateTorsion(lHip, rHip);
+        const score = rateMetric(lHip, rHip, 'y', 1200); // Z-Compensated
+        rawScores.hip.push(score);
+        
+        // Advanced: Detect "Torque" (Shoulders twisted one way, hips the other)
+        if (valid(lSh) && Math.abs(calculateTorsion(lSh, rSh) - hipTorsion) > 8) {
+            detectedIssues.add("Cross-Body Torque");
+            addLog("⚠ Detected Spinal Torsion (Torque)");
+        }
+    }
+}
 
                 // --- SIDE VIEW: AXIAL ALIGNMENT ---
                 if (view === 'side') {
@@ -3602,14 +3639,14 @@ useEffect(() => {
                     // 1. PLUMB LINE ACCURACY (Head over Shoulder)
                     if (valid(ear) && valid(shoulder)) {
                         const dev = Math.abs(ear.x - shoulder.x) / torsoH;
-                        const s = 100 - (dev * 1800); // Scientific constant for Forward Head
+                        const s = 100 - (dev * 1000); // Scientific constant for Forward Head
                         rawScores.head.push(Math.max(40, Math.floor(s)));
                     }
 
                     // 2. KINETIC CHAIN (Hip over Ankle)
                     if (valid(hip) && valid(ankle)) {
                         const chainDev = Math.abs(hip.x - ankle.x) / torsoH;
-                        const s = 100 - (chainDev * 1200);
+                        const s = 100 - (chainDev * 800);
                         rawScores.spine.push(Math.max(40, Math.floor(s)));
                     }
                 }
@@ -3645,13 +3682,13 @@ useEffect(() => {
         if (final.hip === null) final.hip = worstScore + 5;
         if (final.gait === null) final.gait = final.hip ? final.hip : 75;
 
-        // --- 5. SYMPTOM PENALTIES (The "Truth" Layer) ---
-        if (symptoms.includes('Neck Pain')) final.head = Math.min(final.head, 65);
-        if (symptoms.includes('Back Pain')) final.spine = Math.min(final.spine, 65);
-        if (symptoms.includes('Knee Pain')) final.gait = Math.min(final.gait, 65);
-        if (symptoms.includes('Foot Pain')) final.gait = Math.min(final.gait, 60);
-
-        console.log("Final Scores:", final);
+       // --- 5. SYMPTOM PENALTIES (The "Truth" Layer) ---
+// DISABLE CAPS to allow high scores even with pain
+/* if (symptoms.includes('Neck Pain')) final.head = Math.min(final.head, 65);
+if (symptoms.includes('Back Pain')) final.spine = Math.min(final.spine, 65);
+if (symptoms.includes('Knee Pain')) final.gait = Math.min(final.gait, 65);
+if (symptoms.includes('Foot Pain')) final.gait = Math.min(final.gait, 60);
+*/
 
         // --- 6. FINAL ROUNDING & NAN PROTECTION ---
         Object.keys(final).forEach(k => {
@@ -3666,21 +3703,27 @@ useEffect(() => {
         const scoreValues = Object.values(final);
         const average = scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length;
         const minimum = Math.min(...scoreValues);
-        // Ensure totalScore is a valid number, default to 0 if something goes wrong
-        const totalScore = isNaN(average) ? 0 : Math.floor((average * 0.6) + (minimum * 0.4));
+// 1. Calculate the base score
+const totalScore = isNaN(average) ? 0 : Math.floor((average * 0.6) + (minimum * 0.4));
 
-        addLog(`Analysis Complete. Bio-Integrity: ${totalScore}%`);
+// 2. THE BIO-AGE ALGORITHM
+// We assume a baseline age of 30 if they haven't entered one. 
+// For every point below 100, we add 0.5 years to their "Structural Age"
+const baselineAge = 30; 
+const agePenalty = (100 - totalScore) * 0.5;
+const structuralAge = Math.floor(baselineAge + agePenalty);
 
-        // Update UI
-        const newAudit = {
-            date: new Date().toLocaleDateString(),
-            score: totalScore,
-            head: { val: final.head, grade: getGrade(final.head) },
-            shoulders: { val: final.shoulders, grade: getGrade(final.shoulders) },
-            spine: { val: final.spine, grade: getGrade(final.spine) },
-            gait: { val: final.gait, grade: getGrade(final.gait) },
-            hip: { val: final.hip, grade: getGrade(final.hip) }
-        };
+const newAudit = {
+    date: new Date().toLocaleDateString(),
+    score: totalScore,
+    bioAge: structuralAge, // <--- New Property
+    ageDiff: structuralAge - baselineAge, // <--- New Property
+    head: { val: final.head, grade: getGrade(final.head) },
+    shoulders: { val: final.shoulders, grade: getGrade(final.shoulders) },
+    spine: { val: final.spine, grade: getGrade(final.spine) },
+    gait: { val: final.gait, grade: getGrade(final.gait) },
+    hip: { val: final.hip, grade: getGrade(final.hip) }
+};
 
         // NEW: Trend Forecasting
         const recent = history.slice(0, 5).map(h => h.score).reverse();
@@ -3742,155 +3785,152 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
     const generateProgram = () => {
         if (!audit) return;
 
-        // 1. ANALYZE PHASE & MASTERY
+        // 1. Determine current training phase based on total sessions
         const totalSessions = history.length;
         let currentPhase = 1;
-        if (totalSessions > 30) currentPhase = 4;
-        else if (totalSessions > 15) currentPhase = 3;
-        else if (totalSessions > 5) currentPhase = 2;
+        if (totalSessions >= 30) currentPhase = 4;
+        else if (totalSessions >= 15) currentPhase = 3;
+        else if (totalSessions >= 7) currentPhase = 2;
 
-        // Helper: Check if user has mastered prerequisite moves
-        const checkMastery = (reqs) => {
-            if (!reqs) return true;
-            return reqs.every(reqId => {
-                const h = exerciseHistory[reqId];
-                // Mastery = performed at least 3 times with 'good' rating OR reached level 2
-                return h && (h.goodStreaks >= 1 || (h.lastLevel && h.lastLevel >= 1));
-            });
+        // 2. Mastery = 2 consecutive "good" ratings OR level ≥2
+        const isMastered = (exId) => {
+            const h = exerciseHistory[exId];
+            return h && (h.goodStreaks >= 2 || (h.lastLevel >= 1));
         };
 
-        // 2. BUILD THE INTELLIGENT POOL (SCORING ENGINE)
+        // 3. Score every exercise in the database
         let scoredPool = EXERCISE_DB.map(ex => {
             let score = 0;
             let reasons = [];
 
-            // --- FILTER: Hard Constraints (Safety First) ---
+            // Hard filters (safety)
             if (!useEquipment && ex.equipment === 'required') return null;
             if (userPrefs.noEquipment && ex.equipment === 'required') return null;
-            if (userPrefs.lowImpact && (ex.pattern.includes('power') || ex.pattern.includes('rhythmic'))) return null;
+            if (userPrefs.lowImpact && (ex.pattern.includes('power') || ex.pattern.includes('hop'))) return null;
             if (userPrefs.noJumps && (ex.id.includes('hop') || ex.id.includes('bounce'))) return null;
-            // Mastery Check: If they haven't unlocked it, hide it.
-            if (ex.requires_mastery && !checkMastery(ex.requires_mastery)) return null;
 
-            // --- SCORING: Biometrics (The "Digital Twin" Data) ---
-            // If they scored low in this body part, prioritize it massively.
-            if (audit[ex.target_grade]?.grade === 'F') { score += 60; reasons.push("URGENT: Structural Failure"); }
-            else if (audit[ex.target_grade]?.grade === 'D') { score += 40; reasons.push("Priority Correction"); }
-            else if (audit[ex.target_grade]?.grade === 'C') { score += 20; }
+            // Prerequisite mastery gate
+            if (ex.requires_mastery && !ex.requires_mastery.every(isMastered)) return null;
 
-            // --- SCORING: Symptoms (The "Pain" Layer) ---
-            // If this move fixes their specific pain, boost it.
-            const symptomHits = ex.synergies ? ex.synergies.filter(s => symptoms.includes(s)) : [];
-            if (symptomHits.length > 0) {
-                score += 50 * symptomHits.length; // Huge weight on pain relief
-                reasons.push(`Fixes ${symptomHits[0]}`);
+            // Biomechanical priority (weakest link gets huge boost)
+            const targetScore = audit[ex.target_grade]?.val || 100;
+            if (targetScore < 60) { score += 80; reasons.push("Critical Weakness"); }
+            else if (targetScore < 75) { score += 50; reasons.push("High Priority"); }
+            else if (targetScore < 85) { score += 20; }
+
+            // Pain/symptom direct hit
+            if (ex.synergies && ex.synergies.some(s => symptoms.includes(s))) {
+                score += 60;
+                reasons.push("Direct Pain Relief");
             }
 
-            // --- SCORING: Phase Alignment (The "Progression" Layer) ---
-            if (ex.phase === currentPhase) {
-                score += 25;
-                reasons.push(`Phase ${currentPhase} Focus`);
-            } else if (ex.phase < currentPhase) {
-                score += 10; // Maintenance of basics
-            } else if (ex.phase > currentPhase) {
-                score -= 20; // Too advanced (unless critical for pain)
-            }
-            // --- SCORING: Variety (The "Anti-Boredom" Layer) ---
+            // Phase alignment
+            if (ex.phase === currentPhase) { score += 30; reasons.push(`Phase ${currentPhase}`); }
+            else if (ex.phase === currentPhase + 1) { score += 10; } // Prepare for next phase
+            else if (ex.phase < currentPhase && isMastered(ex.id)) { score += 15; reasons.push("Maintenance"); }
+
+            // Variety / anti-boredom
             const hist = exerciseHistory[ex.id];
             const today = new Date().toDateString();
+            if (hist?.lastUsed === today) score -= 1000; // Never repeat same day
+            else if (hist?.goodStreaks >= 2) { score += 25; reasons.push("Mastered – Bonus Flow"); }
 
-            if (hist?.lastUsed === today) {
-                score -= 500; // Don't repeat same exercise in one session (unless forced)
-            } else if (hist?.lastUsed) {
-                const daysSince = (Date.now() - new Date(hist.lastUsed)) / 86400000;
-                if (daysSince < 3) score -= 40; // Penalize if done recently (force rotation)
-                else if (daysSince > 14) score += 15; // Bonus: "Recall" muscle memory
-            } else {
-                score += 20; // Bonus: New stimulus (never done before)
-                reasons.push("New Stimulus");
-            }
+            // New stimulus bonus
+            if (!hist) { score += 20; reasons.push("Fresh Movement"); }
 
-            return { ...ex, score, smartReason: reasons[0] || "General Conditioning" };
-        }).filter(Boolean); // Remove nulls (safety filtered)
+            return { ...ex, score, smartReason: reasons[0] || "Balanced Development" };
+        }).filter(Boolean);
 
-        // 3. SELECT THE ELITE 6
-        // Sort by score descending (Highest Priority First)
+        // 4. Sort descending by score
         scoredPool.sort((a, b) => b.score - a.score);
 
+        // 5. Select 6 exercises with pattern diversity
         const selected = [];
-        const usedPatterns = new Set(); // Prevent doing 6 types of squats
+        const usedPatterns = new Set();
 
-        // Pass 1: Critical High Priority (Score > 50) - Take top 3 regardless of pattern
-        // These are the non-negotiables for pain/structure.
+        // First pass: take the absolute highest priority (even if same pattern)
         for (const ex of scoredPool) {
             if (selected.length >= 3) break;
-            if (ex.score > 50) {
+            if (ex.score > 40) {
                 selected.push(ex);
                 usedPatterns.add(ex.pattern);
             }
         }
 
-        // Pass 2: Pattern Balancing (Fill remaining spots with highest scoring UNIQUE patterns)
-        // This ensures we don't just do 6 foot exercises. We want 1 foot, 1 spine, 1 shoulder, etc.
+        // Second pass: fill with highest scoring unique patterns
         for (const ex of scoredPool) {
             if (selected.length >= 6) break;
-            if (!selected.some(s => s.id === ex.id) && !usedPatterns.has(ex.pattern)) {
+            if (!usedPatterns.has(ex.pattern) && !selected.some(s => s.id === ex.id)) {
                 selected.push(ex);
                 usedPatterns.add(ex.pattern);
             }
         }
 
-        // Pass 3: Fill any remaining spots (if Pattern Balancing was too strict)
+        // Third pass: fill any gaps with next best
         for (const ex of scoredPool) {
             if (selected.length >= 6) break;
-            if (!selected.some(s => s.id === ex.id)) {
-                selected.push(ex);
-            }
+            if (!selected.some(s => s.id === ex.id)) selected.push(ex);
         }
 
-        // 4. MAP TO LEVELS (Progressive Overload)
+        // 6. Map to personalized level + duration
         const routine = selected.map(ex => {
             const hist = exerciseHistory[ex.id] || {};
             let levelIdx = 0;
 
-            // Intelligent Level Selection based on past feedback
-            if (hist.lastRating === 'easy') {
-                levelIdx = Math.min(ex.levels.length - 1, (hist.lastLevel || 0) + 1); // Level Up
+            // Progressive overload logic
+            if (hist.lastRating === 'easy' && hist.goodStreaks >= 1) {
+                levelIdx = Math.min(ex.levels.length - 1, (hist.lastLevel || 0) + 1);
             } else if (hist.lastRating === 'hard') {
-                levelIdx = Math.max(0, (hist.lastLevel || 0) - 1); // Deload
+                levelIdx = Math.max(0, (hist.lastLevel || 0) - 1);
             } else if (hist.lastLevel !== undefined) {
-                levelIdx = hist.lastLevel; // Maintain
-            } else if (audit[ex.target_grade]?.grade === 'A') {
-                levelIdx = Math.min(1, ex.levels.length - 1); // Start higher if structure is strong
+                levelIdx = hist.lastLevel;
+            } else if (audit[ex.target_grade]?.val >= 85) {
+                levelIdx = Math.min(2, ex.levels.length - 1); // Start higher if strong
             }
 
             const level = ex.levels[levelIdx] || ex.levels[0];
 
-            // Update history immediately so re-renders know it's "used today"
-            const today = new Date().toDateString();
+            // Mark as used today
             setExerciseHistory(prev => ({
                 ...prev,
-                [ex.id]: { ...hist, lastUsed: today, lastLevel: levelIdx }
+                [ex.id]: { ...hist, lastUsed: new Date().toDateString(), lastLevel: levelIdx }
             }));
 
             return {
                 ...level,
                 id: ex.id,
                 baseTitle: ex.title,
-                reason: ex.smartReason, // Display the logic to the user
+                reason: ex.smartReason,
                 allLevels: ex.levels,
-                currentLevelIdx: levelIdx
+                currentLevelIdx: levelIdx,
+                duration: level.duration || (levelIdx === 0 ? 60 : levelIdx === 1 ? 90 : 120) // Longer at higher levels
             };
         });
 
-        setGeneratedRoutine(routine);
-        setDailyRoutine([
-            { time: "Morning", task: routine[0]?.name || "Activation", completed: false },
-            { time: "Mid-Day", task: routine[Math.floor(routine.length / 2)]?.name || "Mobility", completed: false },
-            { time: "Evening", task: routine[routine.length - 1]?.name || "Integration", completed: false }
-        ]);
+        // Streak Bonus: Add one advanced flow on 7+ day streak
+        if (streakDays >= 7 && routine.length < 7) {
+            const bonusCandidates = EXERCISE_DB.filter(ex => 
+                ex.phase >= 3 && 
+                ex.levels.length >= 3 &&
+                !routine.some(r => r.id === ex.id)
+            );
+            if (bonusCandidates.length > 0) {
+                const bonusEx = bonusCandidates[0];
+                const bonusLevel = bonusEx.levels[Math.min(2, bonusEx.levels.length - 1)];
+                routine.push({
+                    ...bonusLevel,
+                    id: bonusEx.id,
+                    baseTitle: bonusEx.title + " (Streak Bonus)",
+                    reason: "Fire Streak Unlock",
+                    allLevels: bonusEx.levels,
+                    currentLevelIdx: Math.min(2, bonusEx.levels.length - 1),
+                    duration: 120
+                });
+            }
+        }
 
-        addLog(`Protocol Generated: Phase ${currentPhase} Logic Applied`);
+        setGeneratedRoutine(routine);
+        addLog(`Elite Protocol Built — Phase ${currentPhase} | ${routine.length} Movements`);
     };
     // --- PRESET LOADER ---
     const loadPreset = (presetName) => {
@@ -4020,7 +4060,7 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
     transition-all duration-1000
 `}
                     >
-                        {status.analyzing ? "NEURAL ANALYSIS IN PROGRESS..." : ready ? "ANALYZE MY POSTURE NOW" : "UPLOAD PHOTOS TO BEGIN"}
+                        {status.analyzing ? "NEURAL ANALYSIS IN PROGRESS..." : ready ? "ANALYZE MY POSTURE" : "UPLOAD PHOTOS TO BEGIN"}
                     </button>}
                 </div>
 
@@ -4356,7 +4396,8 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 {/* --- CEO FIX: FUNCTIONAL NAV HEADER --- */}
 <div className="flex items-center justify-between mb-8">
     
-    {/* LEFT SIDE: The Score */}
+    {/* LEFT SIDE: The Score & Bio Age */}
+<div className="flex gap-6">
     <div>
         <div className="text-[9px] font-bold text-cyan-500 uppercase tracking-widest mb-1">Structural Score</div>
         <div className={`text-6xl font-black tracking-tighter leading-none ${
@@ -4368,6 +4409,18 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
             {audit && !isNaN(audit.score) ? audit.score : 0}
         </div>
     </div>
+
+    {/* THIS SHOWS THE BIO AGE */}
+    {audit && (
+        <div className="animate-popIn">
+            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Biological Age</div>
+            <div className={`text-6xl font-black tracking-tighter leading-none ${audit.bioAge > 30 ? 'text-red-500' : 'text-emerald-400'}`}>
+                {audit.bioAge}
+            </div>
+            <div className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-1">Years Old</div>
+        </div>
+    )}
+</div>
 
     {/* RIGHT SIDE: The Nav Buttons (Now with Layout Reset) */}
     <div className="flex bg-slate-950 p-1.5 rounded-xl border border-slate-800 shadow-lg h-fit">
@@ -4414,10 +4467,17 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
                     {/* MY PROTOCOL Button - Always visible after scan */}
                     {audit && (
     <>
-        {/* BIG MY PROTOCOL BUTTON */}
+                {/* BIG MY PROTOCOL BUTTON - FIXED VERSION */}
         <div className="mt-8 animate-popIn">
             <button
-                onClick={() => setActiveProgram(generatedRoutine)}
+                onClick={() => {
+                    // ALWAYS regenerate the latest protocol on click
+                    generateProgram();
+                    // Use a small timeout to ensure state has updated
+                    setTimeout(() => {
+                        setActiveProgram(generatedRoutine);
+                    }, 100);
+                }}
                 className="w-full py-10 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-700 
                        hover:from-cyan-400 hover:via-blue-500 hover:to-purple-600 
                        text-white font-black text-4xl rounded-3xl uppercase tracking-widest 
@@ -4429,6 +4489,16 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
                 MY PROTOCOL
             </button>
         </div>
+
+        {/* Streak Bonus Message */}
+        {streakDays >= 7 && generatedRoutine && (
+            <div className="mt-4 p-4 bg-emerald-900/30 border border-emerald-700/50 rounded-xl text-center animate-popIn">
+                <div className="text-emerald-400 font-black text-lg flex items-center justify-center gap-2">
+                    <Icons.Flame className="streak-flame" /> {streakDays}-DAY STREAK BONUS
+                </div>
+                <p className="text-xs text-emerald-300 mt-1">+1 Advanced Flow Added</p>
+            </div>
+        )}
 
 {/* EQUIPMENT TOGGLE */}
         <div className="mt-12 w-full">
