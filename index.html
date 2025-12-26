@@ -138,12 +138,12 @@
     .upload-slot.scanning .scanner-line {
         display: block !important;
         opacity: 1 !important;
-        animation: scanDown 3s ease-in-out infinite; /* Faster loop for premium feel */
+        animation: scanDown 5s ease-in-out infinite; /* Faster loop for premium feel */
     }
 .analyzing .upload-slot.active .scanner-line {
     display: block !important;
     opacity: 1 !important;
-    animation: scanDown 2.5s ease-in-out infinite !important; /* A bit faster for premium feel */
+    animation: scanDown 5s ease-in-out infinite !important; /* A bit faster for premium feel */
     box-shadow: 0 0 60px #22d3ee, 0 0 120px rgba(34, 211, 238, 0.9) !important; /* Extra glow! */
 }
     
@@ -204,7 +204,7 @@
     box-shadow: 
         0 0 40px #22d3ee,
         0 0 100px rgba(34, 211, 238, 0.8);
-    animation: scanDown 3s ease-in-out infinite;
+    animation: scanDown 10s ease-in-out infinite;
     z-index: 25; 
     display: none;
     opacity: 0;
@@ -852,7 +852,7 @@ const AICoach = ({ audit, symptoms, chatHistory, onSend }) => {
             <div className="p-4 bg-slate-900 border-b border-slate-800 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">Bio-AI Coach</span>
+                    <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">Pocket Coach</span>
                 </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
@@ -3513,6 +3513,60 @@ useEffect(() => {
                     setSideKeypoints(keypoints);
                 }
 
+// REPLACEMENT: Local AI Classifier (Better than Gemini - 100% Offline)
+                try {
+                    // Simple rule-based classifier using your keypoints (expandable)
+                    const classifyPose = (kps) => {
+                        let flags = [];
+
+                        // Forward Head: Ear (8) ahead of shoulder (12) by >5% torso height
+                        if (valid(kps[8]) && valid(kps[12])) {
+                            const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3)); // Fallback hip
+                            const headDev = Math.abs(kps[8].x - kps[12].x) / torsoH;
+                            if (headDev > 0.05) flags.push({ class: 'forward_head', conf: headDev * 2 });
+                        }
+
+                        // Scoliosis Risk: Shoulder (11/12) or hip (23/24) Y-diff >3%
+                        const shYDiff = valid(kps[11]) && valid(kps[12]) ? Math.abs(kps[11].y - kps[12].y) : 0;
+                        const hipYDiff = valid(kps[23]) && valid(kps[24]) ? Math.abs(kps[23].y - kps[24].y) : 0;
+                        const curveRisk = Math.max(shYDiff, hipYDiff);
+                        if (curveRisk > 0.03) flags.push({ class: 'scoliosis_risk', conf: curveRisk * 20 });
+
+                        // Pelvic Tilt: Hip (24) ahead/behind ankle (28) by >4%
+                        if (valid(kps[24]) && valid(kps[28])) {
+                            const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3));
+                            const tiltDev = Math.abs(kps[24].x - kps[28].x) / torsoH;
+                            if (tiltDev > 0.04) flags.push({ class: 'pelvic_tilt', conf: tiltDev * 20 });
+                        }
+
+                        // Valgus Knees: Knee (26) inward of hip (24)/ankle (28) by >5%
+                        if (valid(kps[24]) && valid(kps[26]) && valid(kps[28])) {
+                            const kneeIn = Math.abs(kps[26].x - ((kps[24].x + kps[28].x) / 2));
+                            if (kneeIn > 0.05) flags.push({ class: 'valgus_knees', conf: kneeIn * 15 });
+                        }
+
+                        // Return highest conf flag (or normal)
+                        if (flags.length === 0) return { class: 'normal', conf: 1.0 };
+                        flags.sort((a, b) => b.conf - a.conf);
+                        return { class: flags[0].class, conf: Math.min(1.0, flags[0].conf) };
+                    };
+
+                    const aiResult = classifyPose(keypoints);
+                    
+                    if (aiResult.conf > 0.6 && aiResult.class !== 'normal') {
+                        detectedIssues.add(aiResult.class);
+                        addLog(`Local AI Flag: ${aiResult.class} (${(aiResult.conf * 100).toFixed(0)}%)`);
+
+                        if (aiResult.class.includes('head') || aiResult.class.includes('scoliosis')) rawScores.head.push(100 - (aiResult.conf * 55));
+                        else if (aiResult.class.includes('tilt') || aiResult.class.includes('pelvic')) rawScores.hip.push(100 - (aiResult.conf * 50));
+                        else if (aiResult.class.includes('valgus') || aiResult.class.includes('knee')) rawScores.gait.push(100 - (aiResult.conf * 55));
+                    }
+
+                } catch (e) {
+                    console.error("Local Classifier Error", e);
+                    addLog("Local AI Classifier Skipped");
+                }
+
                 // --- FRONT VIEW: ELITE 3D ANALYSIS ---
                 const p = (idx) => keypoints[idx]; // Local helper for the current scan
                 if (view === 'front') {
@@ -3645,7 +3699,7 @@ useEffect(() => {
         addLog("Synchronizing Biometric Data...");
 
         // This is the "Dramatic Pause". 3000 = 3 seconds of extra scanning time.
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 4000));
 
         setAudit(newAudit);
         setHistory([newAudit, ...history]);
