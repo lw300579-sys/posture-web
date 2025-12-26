@@ -6,6 +6,7 @@
     <title>Free Posture Analysis & Personalized Biomechanics Protocol</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
 
+
     
 <!-- React & Dependencies (2025 Immortal CDN) -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3121,14 +3122,14 @@ useEffect(() => {
                     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
                 );
 
-               const poseLandmarker = await mp.PoseLandmarker.createFromOptions(vision, {
-    baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task`
-
-    },
-    runningMode: "IMAGE",
-    numPoses: 1
-});
+                const poseLandmarker = await mp.PoseLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task`,
+                        delegate: "GPU"
+                    },
+                    runningMode: "IMAGE",
+                    numPoses: 1
+                });
 
                 setSystem(prev => ({ ...prev, detector: poseLandmarker }));
                 setIsModelReady(true);
@@ -3217,64 +3218,97 @@ useEffect(() => {
         setDailyRoutine(newRoutine);
     };
 
-    // --- V99.0: LIVE NEURAL BIO-COACH ENGINE ---
+    // --- ULTIMATE OFFLINE BIO-COACH (MAX SOPHISTICATION, NO GEMINI) ---
     const handleChat = async (input) => {
-        // 1. Update UI immediately with user message
         setChatHistory(prev => [...prev, { sender: 'user', text: input }]);
-        
-        try {
-            // 2. CONNECT TO GEMINI (Using the key from your analysis engine)
-            const API_KEY = "AIzaSyCW0FggoGIFB6v5i95Hw5XM4s2sEA2ptfQ"; 
-            
-            // Safety check
-            if (!API_KEY || API_KEY.includes("YOUR_")) throw new Error("Key Missing");
 
-            const genAI = new window.GoogleGenerativeAI(API_KEY);
-            // Flash model is fast enough for chat
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); 
+        await new Promise(r => setTimeout(r, 900)); // Feels thoughtful
 
-            // 3. BUILD THE CONTEXT (The "Brain")
-            // We feed it your actual scan data so it knows YOU.
-            const prompt = `
-                SYSTEM: You are the Bio-Metric Pro AI, an elite biomechanics coach specializing in Fascial Tensegrity, Spiral Dynamics, and Evolutionary Biology. You are NOT a generic assistant. You are intense, scientific, and actionable.
-                
-                USER BIO-DATA (Live Scan):
-                - Overall Score: ${audit?.score || 0}%
-                - Head Posture: ${audit?.head?.grade || 'N/A'} (${audit?.head?.val || 0}%)
-                - Shoulders: ${audit?.shoulders?.grade || 'N/A'} (${audit?.shoulders?.val || 0}%)
-                - Spine: ${audit?.spine?.grade || 'N/A'} (${audit?.spine?.val || 0}%)
-                - Hips: ${audit?.hip?.grade || 'N/A'} (${audit?.hip?.val || 0}%)
-                - Gait/Recoil: ${audit?.gait?.grade || 'N/A'} (${audit?.gait?.val || 0}%)
-                - Reported Pain: ${symptoms.join(', ') || 'None'}
+        const lower = input.toLowerCase();
 
-                USER QUESTION: "${input}"
-
-                INSTRUCTIONS:
-                1. Answer in under 50 words. Be punchy.
-                2. Relate the answer specifically to their lowest scores above.
-                3. Use terms like "Fascial Slings", "VMO", "Axial Load", "Tensegrity".
-                4. If they complain of pain, explain the mechanical root cause (e.g., "Your knee hurts because your hip score is D").
-            `;
-
-            // 4. GENERATE RESPONSE
-            const result = await model.generateContent(prompt);
-            const response = result.response.text();
-
-            setChatHistory(prev => [...prev, { sender: 'ai', text: response }]);
-
-        } catch (e) {
-            console.error("AI Fallback:", e);
-            // FALLBACK LOGIC (If offline or API fails)
-            const lower = input.toLowerCase();
-            let fallback = "I'm analyzing your fascial web. Focus on 'Head Over Foot' alignment for now.";
-            
-            if (lower.includes("knee")) fallback = "Knee pain is usually a hip stability issue. Your lateral sling isn't firing.";
-            if (lower.includes("score")) fallback = `Your score is ${audit?.score}%. We need to work on your ${audit ? Object.keys(audit).find(k => audit[k]?.grade === 'F' || audit[k]?.grade === 'D') : 'posture'}.`;
-            
-            setTimeout(() => {
-                setChatHistory(prev => [...prev, { sender: 'ai', text: fallback }]);
-            }, 600);
+        // Find worst + second worst areas
+        let worst = { part: "balanced", score: 100, key: "" };
+        let second = { part: "great", score: 100, key: "" };
+        if (audit) {
+            const map = {
+                head: { name: "head/neck (forward head posture)", tips: "Head Loading, Chest Openers, Trap Release" },
+                shoulders: { name: "shoulders (rounded/kyphotic)", tips: "Standing Pulls, Chest Openers, Arm Raises" },
+                spine: { name: "spine/back (compression or stiffness)", tips: "Spinal Waves, Body Wave, Diaphragm Breath" },
+                hip: { name: "hips/pelvis (tilt or shift)", tips: "Split Squats, Coiling, Body Bounce" },
+                gait: { name: "feet/legs/gait (weak recoil)", tips: "Plantar Release, Towel Curls, Hyperarch Hops" }
+            };
+            for (let key in map) {
+                const val = audit[key]?.val || 100;
+                if (val < worst.score) {
+                    second = worst;
+                    worst = { part: map[key].name, score: val, key, tips: map[key].tips };
+                } else if (val < second.score) {
+                    second = { part: map[key].name, score: val, key, tips: map[key].tips };
+                }
+            }
         }
+
+        let reply = "";
+
+        if (lower.includes("hi") || lower.includes("hello") || lower.includes("hey") || lower.includes("start")) {
+            reply = `Hey champion! Your current Bio-Integrity Score is ${audit?.score || "?"}%. We're building a resilient, elastic body using biotensegrity principles — your fascia is the key web holding everything together.\n\nRight now your biggest area is ${worst.part} at ${worst.score}%. Let's crush that first. What do you want to know or fix today?`;
+        }
+        else if (lower.includes("score") || lower.includes("grade") || lower.includes("result")) {
+            reply = `Here's your full fascial integrity breakdown (lower % = more restriction):\n\n` +
+                    `• Head/Neck: ${audit?.head?.grade || "?"} (${audit?.head?.val || "?"}%) — Forward head pulls on the entire fascial web.\n` +
+                    `• Shoulders: ${audit?.shoulders?.grade || "?"} (${audit?.shoulders?.val || "?"}%) — Rounded shoulders collapse the tensegrity structure.\n` +
+                    `• Spine/Back: ${audit?.spine?.grade || "?"} (${audit?.spine?.val || "?"}%) — Compression blocks elastic recoil.\n` +
+                    `• Hips/Pelvis: ${audit?.hip?.grade || "?"} (${audit?.hip?.val || "?"}%) — Tilt leaks power through the slings.\n` +
+                    `• Feet/Legs/Gait: ${audit?.gait?.grade || "?"} (${audit?.gait?.val || "?"}%) — Weak recoil means expensive movement.\n\n` +
+                    `Your primary limitation: ${worst.part}. Secondary: ${second.part}.\n\nYour protocol is laser-focused on this — do it daily and watch the scores climb!`;
+        }
+        else if (lower.includes("head") || lower.includes("neck") || lower.includes("tech")) {
+            reply = `Forward head posture ("tech neck") is a tensegrity disaster — your head floats forward, overloading the posterior fascial chain and compressing your spine. Every inch forward adds ~10lbs of leverage stress!\n\n` +
+                    `Root cause: Tight suboccipitals + weak deep cervical flexors from screens. This pulls on the entire web down to your feet.\n\n` +
+                    `Immediate fixes from your protocol:\n1. Head Loading (axial decompression — teaches floating compression)\n2. Chest Openers (releases anterior chain)\n3. Trap Release + Standing Pulls (wakes lower traps)\n\n` +
+                    `Do these daily. Breathe deep — fascia hydrates through movement! You'll feel taller in days.`;
+        }
+        else if (lower.includes("shoulder") || lower.includes("round")) {
+            reply = `Rounded shoulders collapse your biotensegrity structure — bones compress instead of floating in the fascial tensegrity web. This shortens the anterior chain (pecs) and weakens posterior slings.\n\n` +
+                    `Root cause: Sedentary life + forward head pulling everything down.\n\n` +
+                    `Best protocol moves:\n• Chest Openers + Arm Raises (lengthen front line)\n• Standing Pulls/Face Pulls (fire rhomboids/lower traps)\n• Body Wave (global extension)\n\n` +
+                    `Focus on "ears over shoulders" alignment. Your shoulders aren't earrings — drop and retract!`;
+        }
+        else if (lower.includes("back") || lower.includes("spine") || lower.includes("pain")) {
+            reply = `Back/spine issues come from lost tensegrity — your fascia gets glued, bones compress, and elastic recoil dies. You're a spring, not a stack of blocks!\n\n` +
+                    `Root cause: Thoracic stiffness + weak deep front line. Sitting turns your spine rigid.\n\n` +
+                    `Protocol heroes:\n• Spinal Waves + Body Wave (segmental motion hydrates discs)\n• Diaphragm Breath (360 expansion = internal brace)\n• Inversion Hang (decompression)\n\n` +
+                    `Move like water — undulate! This rebuilds the omni-directional web. Pain melts fast.`;
+        }
+        else if (lower.includes("hip") || lower.includes("pelvis") || lower.includes("tilt")) {
+            reply = `Hip/pelvic tilt destroys force transmission — your posterior/anterior oblique slings disconnect, leaking power and causing knee/back pain.\n\n` +
+                    `Root cause: Glute amnesia + tight hip flexors from sitting. The pelvis is your transmission!\n\n` +
+                    `Top fixes:\n• Deep Split Squats (VMO + hip flexor length)\n• Coiling Lunges (torsion loading)\n• Body Bounce + QL Straddle (lateral line)\n\n` +
+                    `Head over foot alignment is key — coil the spring! Your glutes will wake up.`;
+        }
+        else if (lower.includes("knee") || lower.includes("gait") || lower.includes("foot") || lower.includes("leg")) {
+            reply = `Weak gait/recoil means expensive movement — your Achilles/plantar fascia aren't storing elastic energy. You're muscling everything instead of springing!\n\n` +
+                    `Root cause: Dead feet from shoes + hip issues up the chain.\n\n` +
+                    `Protocol gold:\n• Plantar Release + Towel Curls (wake intrinsic foot)\n• Hyperarch/Pogo Hops (build stiffness)\n• Split Squats (connect foot to glute)\n\n` +
+                    `Your foot is the battery — recharge it barefoot! Bounce, don't thud.`;
+        }
+        else if (lower.includes("best") || lower.includes("first") || lower.includes("priority")) {
+            reply = `Priority #1: Your ${worst.part} at ${worst.score}% — this is the weakest link in your fascial web.\n\n` +
+                    `Fix the foundation first (biotensegrity rule). Start every session with the top exercises targeting this:\n${worst.tips}\n\n` +
+                    `Do them mindfully — feel the fascia glide. Consistency here unlocks everything else. You're...You're capable of elite structure!`;
+        }
+        else if (lower.includes("progress") || lower.includes("fast") || lower.includes("improve")) {
+            reply = `Fast progress formula:\n1. Scan daily (track the web healing)\n2. Full protocol 5x/week — quality over quantity\n3. Extra love for ${worst.part}\n4. Move more: Walk barefoot, bounce, breathe deep\n5. Hydrate fascia — rhythmic movement > static stretching\n\n` +
+                    `Most see 10-20% gains in 2-4 weeks. Your body is a self-healing tensegrity masterpiece — feed it movement!`;
+        }
+        else {
+            reply = `Solid question! Your body operates on biotensegrity — bones float in a continuous tension web of fascia. Restriction in one area pulls on everything.\n\n` +
+                    `Current priority: ${worst.part} (${worst.score}%). Your protocol attacks this exactly — trust the process.\n\n` +
+                    `Top moves today: ${worst.tips}\n\n` +
+                    `Breathe, feel the glide, stay elastic. You've got unbreakable potential — let's build it! What else? 💪`;
+        }
+
+        setChatHistory(prev => [...prev, { sender: 'ai', text: reply }]);
     };
     const drawSkeleton = (keypoints, view) => {
         const canvas = document.getElementById(`canvas-${view}`);
@@ -4500,6 +4534,3 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 </script>
 </body>
 </html>
-
-
-
