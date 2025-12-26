@@ -3507,47 +3507,7 @@ useEffect(() => {
                     }
                 }
 
-                // NEW: Run Gemini AI Classifier on keypoints
-                try {
-                    // REPLACE WITH YOUR ACTUAL API KEY
-                    const API_KEY = "AIzaSyCW0FggoGIFB6v5i95Hw5XM4s2sEA2ptfQ";
-
-                    if (API_KEY === "YOUR_GEMINI_API_KEY") {
-                        addLog("⚠ Gemini API Key Missing");
-                    } else {
-                        const genAI = new window.GoogleGenerativeAI(API_KEY);
-                        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-
-                        const prompt = `
-                                    Analyze these pose keypoints (MediaPipe format). 
-                                    Keypoints: ${JSON.stringify(keypoints.map(k => ({ x: k.x, y: k.y, z: k.z, name: k.name })))}
-                                    
-                                    Classify into exactly one of these: 'normal', 'forward_head', 'scoliosis_risk', 'pelvic_tilt', 'valgus_knees'.
-                                    Return ONLY JSON: {"class": "category_name", "confidence": 0.0-1.0}
-                                `;
-
-                        const result = await Promise.race([
-                            model.generateContent(prompt),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 30000))
-                        ]);
-                        const response = await result.response;
-                        const text = response.text();
-                        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
-                        const aiResult = JSON.parse(jsonStr);
-
-                        if (aiResult.confidence > 0.6 && aiResult.class !== 'normal') {
-                            detectedIssues.add(aiResult.class);
-                            addLog(`Gemini Flag: ${aiResult.class} (${(aiResult.confidence * 100).toFixed(0)}%)`);
-
-                            if (aiResult.class.includes('head') || aiResult.class.includes('scoliosis')) rawScores.head.push(45);
-                            else if (aiResult.class.includes('tilt') || aiResult.class.includes('pelvic')) rawScores.hip.push(50);
-                            else if (aiResult.class.includes('valgus') || aiResult.class.includes('knee')) rawScores.gait.push(45);
-                        }
-                    }
-                } catch (e) {
-                    console.error("Gemini Analysis Failed", e);
-                    addLog("Gemini Analysis Skipped");
-                }
+                                addLog("Gemini AI enhancement skipped (optional feature)");
 
                 if (view === 'side') {
                     setSideKeypoints(keypoints);
