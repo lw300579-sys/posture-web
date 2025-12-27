@@ -3255,7 +3255,7 @@ useEffect(() => {
         const startCamera = async () => {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user", width: 1280, height: 720 }
+                    video: { facingMode: "user" }
                 });
                 if (liveVideoRef.current) {
                     liveVideoRef.current.srcObject = stream;
@@ -4969,3 +4969,4 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 </script>
 </body>
 </html>
+
