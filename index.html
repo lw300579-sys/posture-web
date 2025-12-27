@@ -3214,6 +3214,10 @@ useEffect(() => {
     const [currentTheme, setCurrentTheme] = useState('power');  // Weekly theme: power, recovery, mobility
     const [postAnalysisMode, setPostAnalysisMode] = useState(false);
     const [isModelReady, setIsModelReady] = useState(false);
+    const [liveMode, setLiveMode] = useState(false);
+    const [liveKeypoints, setLiveKeypoints] = useState(null);
+    const liveVideoRef = useRef(null);
+    const liveCanvasRef = useRef(null);
 
     const debouncedRunAnalysis = React.useCallback(() => {
         if (status.analyzing) return; // Ignore duplicates
@@ -3240,6 +3244,111 @@ useEffect(() => {
             lastRating: rating,
             goodStreaks
         };
+
+    // LIVE MODE: Start webcam and run continuous detection
+    useEffect(() => {
+        if (!liveMode || !system.detector) return;
+
+        let stream = null;
+        let animationFrameId = null;
+
+        const startCamera = async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: 1280, height: 720 }
+                });
+                if (liveVideoRef.current) {
+                    liveVideoRef.current.srcObject = stream;
+                }
+
+                const detectLoop = async () => {
+                    if (!liveVideoRef.current || liveVideoRef.current.readyState < 2) {
+                        animationFrameId = requestAnimationFrame(detectLoop);
+                        return;
+                    }
+
+                    const results = await system.detector.detectForVideo(
+                        liveVideoRef.current,
+                        performance.now()
+                    );
+
+                    if (results.landmarks && results.landmarks[0]) {
+                        setLiveKeypoints(results.landmarks[0]);
+                        drawLiveSkeleton(results.landmarks[0]);
+                    }
+
+                    animationFrameId = requestAnimationFrame(detectLoop);
+                };
+
+                detectLoop();
+            } catch (err) {
+                console.error("Camera access denied", err);
+                addLog("Camera access blocked — allow in browser");
+                setLiveMode(false);
+            }
+        };
+
+        startCamera();
+
+        return () => {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            setLiveKeypoints(null);
+        };
+    }, [liveMode, system.detector]);
+
+    // Helper: Draw skeleton on live canvas
+    const drawLiveSkeleton = (keypoints) => {
+        const canvas = liveCanvasRef.current;
+        if (!canvas || !liveVideoRef.current) return;
+
+        const video = liveVideoRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Scale keypoints to canvas size
+        const scaled = keypoints.map(kp => ({
+            x: kp.x * canvas.width,
+            y: kp.y * canvas.height
+        }));
+
+        // Connections (same as your static version)
+        const connections = [
+            [11,12],[11,13],[13,15],[12,14],[14,16], // arms
+            [11,23],[12,24],[23,25],[24,26],         // torso to hips/legs
+            [23,24]                                  // hips
+        ];
+
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+
+        connections.forEach(([a, b]) => {
+            if (keypoints[a]?.visibility > 0.3 && keypoints[b]?.visibility > 0.3) {
+                ctx.beginPath();
+                ctx.moveTo(scaled[a].x, scaled[a].y);
+                ctx.lineTo(scaled[b].x, scaled[b].y);
+                ctx.stroke();
+            }
+        });
+
+        // Keypoint dots
+        scaled.forEach((kp, i) => {
+            if (keypoints[i]?.visibility > 0.5) {
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.arc(kp.x, kp.y, 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#22d3ee';
+                ctx.beginPath();
+                ctx.arc(kp.x, kp.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+    };
         setExerciseHistory(newHistory);
         // Visual feedback log
         const rateMsg = rating === 'easy' ? "Marked Easy (Progressing next time)" : rating === 'hard' ? "Marked Hard (Regressing next time)" : "Marked Good (Maintaining)";
@@ -4144,6 +4253,58 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
                 setCameraActive(null);
                 addLog(`Captured ${cameraActive} view via Camera`);
             }} />}
+
+            {/* LIVE REAL-TIME MODE OVERLAY */}
+            {liveMode && (
+                <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center p-4 animate-popIn">
+                    <div className="relative w-full max-w-4xl h-[80vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-cyan-500/50">
+                        {/* Webcam Video */}
+                        <video
+                            ref={liveVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="absolute inset-0 w-full h-full object-cover"
+                        />
+
+                        {/* Live Skeleton Canvas */}
+                        <canvas
+                            ref={liveCanvasRef}
+                            className="absolute inset-0 w-full h-full pointer-events-none"
+                        />
+
+                        {/* Top Status */}
+                        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-10 py-5 rounded-2xl border border-cyan-500 shadow-2xl">
+                            <div className="text-4xl font-black text-cyan-400 text-center">
+                                {liveKeypoints ? "ANALYZING POSTURE LIVE" : "POSITION YOURSELF"}
+                            </div>
+                            <div className="text-sm text-slate-300 text-center mt-2">
+                                Stand 2–3 meters away • Full body in frame • Face forward
+                            </div>
+                        </div>
+
+                        {/* Auto-capture countdown (will add later) */}
+                        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-6xl font-black text-white">
+                            Hold still...
+                        </div>
+
+                        {/* Close Button */}
+                        <button
+                            onClick={() => {
+                                setLiveMode(false);
+                                if (liveVideoRef.current?.srcObject) {
+                                    liveVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                                }
+                                setLiveKeypoints(null);
+                            }}
+                            className="absolute top-6 right-6 w-16 h-16 bg-red-600/90 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-2xl"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {isModelLoading && (
                 <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center backdrop-blur-xl animate-popIn">
                     <div className="w-20 h-20 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-6"></div>
@@ -4197,26 +4358,42 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
                     )}
                 </div>
                 {/* HEADER NAV - ENHANCED with Progress Tab */}
-                <div className="flex justify-between items-center mb-2 no-print">
-                    {tab === 'dashboard' && <button onClick={() => { if (!status.analyzing && ready) runAnalysis(); }} disabled={status.analyzing || !ready} className={`
-    btn-primary 
-    w-full max-w-2xl mx-auto 
-    text-3xl py-8 
-    rounded-3xl 
-    font-black 
-    uppercase 
-    tracking-widest 
-    shadow-2xl shadow-cyan-900/60
-    bg-size-200
-    ${ready && !status.analyzing
-                            ? 'animate-pulse-slow bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-pos-0 hover:bg-pos-100'
-                            : 'opacity-60 bg-gradient-to-r from-slate-600 to-slate-700'
-                        }
-    transition-all duration-1000
-`}
-                    >
-                        {status.analyzing ? "NEURAL ANALYSIS IN PROGRESS..." : ready ? "ANALYZE MY POSTURE" : "UPLOAD PHOTOS TO BEGIN"}
-                    </button>}
+                                <div className="flex justify-between items-center mb-2 no-print">
+                    <div className="w-full max-w-4xl mx-auto space-y-8">
+                        {/* NEW: LIVE REAL-TIME BUTTON */}
+                        {!liveMode && isModelReady && (
+                            <button
+                                onClick={() => setLiveMode(true)}
+                                className="btn-primary w-full text-3xl py-8 rounded-3xl font-black uppercase tracking-widest shadow-2xl animate-pulse-slow bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-600 hover:from-emerald-400 hover:via-cyan-400 hover:to-blue-500 transition-all duration-1000"
+                            >
+                                LIVE REAL-TIME POSTURE COACH
+                            </button>
+                        )}
+
+                        {/* ORIGINAL: STANDARD ANALYSIS BUTTON */}
+                        <button
+                            onClick={() => { if (!status.analyzing && ready) runAnalysis(); }}
+                            disabled={status.analyzing || !ready}
+                            className={`
+                                btn-primary 
+                                w-full 
+                                text-3xl py-8 
+                                rounded-3xl 
+                                font-black 
+                                uppercase 
+                                tracking-widest 
+                                shadow-2xl shadow-cyan-900/60
+                                bg-size-200
+                                ${ready && !status.analyzing
+                                    ? 'animate-pulse-slow bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-pos-0 hover:bg-pos-100'
+                                    : 'opacity-60 bg-gradient-to-r from-slate-600 to-slate-700'
+                                }
+                                transition-all duration-1000
+                            `}
+                        >
+                            {status.analyzing ? "NEURAL ANALYSIS IN PROGRESS..." : ready ? "ANALYZE MY POSTURE" : "UPLOAD PHOTOS TO BEGIN"}
+                        </button>
+                    </div>
                 </div>
 
                 {tab === 'dashboard' ? (
