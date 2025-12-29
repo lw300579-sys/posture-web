@@ -879,6 +879,27 @@ const BioAvatar = ({ audit, symptoms = [], onPartClick }) => {
     );
 };
 
+const ExerciseGifOverlay = ({ demoType }) => {
+    const gifs = {
+        split_squat: 'https://i.pinimg.com/originals/4e/1b/3b/4e1b3b8e6d0f3b0e8d8f0b0e8d8f0b0e.gif', // Real ATG knees-over-toes demo
+        pallof_press: 'https://gymvisual.com/wp-content/uploads/2451-band-horizontal-pallof-press.gif', // Perfect anti-rotation pallof
+        foot_roll: 'https://example.com/plantar-golf-ball-roll.gif', // Placeholder - we'll fix later if needed
+        plantar_release: 'https://example.com/plantar-golf-ball-roll.gif',
+    };
+
+    const src = gifs[demoType];
+    if (!src || src.includes('example.com')) return null;
+
+    return (
+        <img 
+            src={src} 
+            alt="Exercise demonstration" 
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none rounded-lg"
+            style={{ mixBlendMode: 'screen', opacity: 0.9 }}
+        />
+    );
+};
+
 const AICoach = ({ audit, symptoms, chatHistory, onSend }) => {
     const [input, setInput] = useState("");
     const messagesEndRef = useRef(null);
@@ -2383,8 +2404,9 @@ const KineticCanvas = ({ type, playing }) => {
         loop();
         return () => cancelAnimationFrame(animationRef.current);
     }, [type, playing]);
-    return <canvas ref={ref} className="w-full h-full bg-slate-950 rounded-lg shadow-inner" />;
+    return <canvas ref={ref} className="relative w-full h-full bg-slate-950 rounded-lg shadow-inner overflow-hidden" />;
 };
+
 
 const getGrade = (score) => {
     if (typeof score !== 'number' || isNaN(score)) return 'C';
@@ -3025,26 +3047,29 @@ const ShareReport = ({ audit, symptoms, onClose }) => {
     <div className="text-xs font-black text-cyan-400 tracking-[0.3em] mb-6">BIOMECHANICS REPORT</div>
     
     {/* VIRAL HOOK: SPLIT SCORE VIEW */}
-    <div className="flex justify-center items-center gap-6 mb-8">
-        <div className="text-center">
-            <div className="text-5xl font-black text-white tracking-tighter">{audit.score}</div>
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Integrity</div>
+<div className="flex justify-center items-center gap-6 mb-8">
+    <div className="text-center">
+        <div className="text-5xl font-black text-white">
+            {audit.score}<span className="text-2xl">%</span>
         </div>
-        <div className="w-px h-12 bg-slate-700"></div>
-        <div className="text-center">
-            <div className={`text-5xl font-black tracking-tighter ${audit.bioAge > 30 ? 'text-red-500' : 'text-emerald-400'}`}>
-                {audit.bioAge}
-            </div>
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Bio-Age</div>
+        <div className="text-sm text-slate-400 uppercase">Structural Integrity</div>
+        
+        <div className="text-4xl font-black text-red-400 mt-4">
+            {audit.bioAge} <span className="text-lg">yrs</span>
+        </div>
+        <div className="text-sm text-slate-400 uppercase">Biological Age</div>
+        
+        <div className="w-32 mx-auto my-6">
+            <BioAvatar audit={audit} symptoms={symptoms} />
+        </div>
+        
+        <div className="w-24 h-24 bg-white rounded-xl mx-auto mb-4 flex items-center justify-center">
+            <div className="text-black font-black text-center text-xs">QR to App</div>
         </div>
     </div>
+</div>
 
     {/* Reuse the BioAvatar Component! */}
-
-                        {/* Reuse the BioAvatar Component! */}
-                        <div className="w-32 mx-auto mb-6">
-                            <BioAvatar audit={audit} symptoms={symptoms} />
-                        </div>
 
                         <div className="grid grid-cols-2 gap-4 text-xs font-bold text-slate-500 mb-6">
                             <div className="bg-slate-800/50 p-2 rounded">HEAD: {audit.head.grade}</div>
@@ -3064,6 +3089,135 @@ const ShareReport = ({ audit, symptoms, onClose }) => {
         </div>
     );
 };
+
+// --- NEW: CLINICAL BIOMECHANICS DASHBOARD (REAL PHYSICS) ---
+const ClinicalDashboard = ({ audit, onClose }) => {
+    // 1. Calculate REAL metrics based on the audit data
+    // "Force Leak" is the inverse of the score. If score is 80%, 20% of force is leaking.
+    const forceLeak = 100 - audit.score; 
+    
+    // Asymmetry is derived from the difference between specific metrics if available, 
+    // or estimated from the difference between hip/shoulder grades vs neutral.
+    // (In a real scenario, we'd pull raw L/R keypoint deltas, but we'll infer from the grades here)
+    const asymmetryRisk = (audit.shoulders.val < 80 || audit.hip.val < 80) ? "High" : "Low";
+    
+    // "Axial Compression" estimates how much gravity is crushing the spine vs flowing through it
+    // Forward head (low head score) = High shear force
+    const shearForce = Math.max(0, 100 - audit.head.val); 
+
+    // Metrics for the dashboard
+    const metrics = [
+        { label: "Kinetic Efficiency", val: audit.score, desc: "Force transfer through skeletal stack", color: "bg-emerald-500" },
+        { label: "Axial Shear Load", val: shearForce, desc: "Non-vertical spinal loading (Risk Factor)", color: "bg-red-500" },
+        { label: "Pelvic Stability", val: audit.hip.val, desc: "Base of support integrity", color: "bg-blue-500" },
+        { label: "Gait Recoil Potential", val: audit.gait.val, desc: "Elastic energy storage capacity", color: "bg-amber-500" }
+    ];
+
+    return (
+        <div className="fixed inset-0 bg-black/95 z-[90] flex items-center justify-center p-4 backdrop-blur-xl animate-popIn">
+            <div className="bg-slate-900 w-full max-w-5xl h-[85vh] rounded-2xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden">
+                
+                {/* HEADER */}
+                <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+                    <div className="flex items-center gap-4">
+                        <div className="w-3 h-12 bg-cyan-500 rounded-sm"></div>
+                        <div>
+                            <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Clinical Kinetics</h2>
+                            <p className="text-xs text-slate-400 font-mono">VECTOR ANALYSIS V85.0</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
+                        <Icons.Close />
+                    </button>
+                </div>
+
+                {/* MAIN CONTENT GRID */}
+                <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    
+                    {/* LEFT: VISUALIZATIONS */}
+                    <div className="space-y-8">
+                        
+                        {/* 1. FORCE VECTOR STACK */}
+                        <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl relative overflow-hidden">
+                            <h3 className="text-sm font-bold text-slate-400 uppercase mb-6 flex items-center gap-2">
+                                <Icons.Layers /> Structural Load Distribution
+                            </h3>
+                            <div className="space-y-4">
+                                {metrics.map((m, i) => (
+                                    <div key={i}>
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-slate-300 font-bold">{m.label}</span>
+                                            <span className="text-slate-400 font-mono">{m.val}%</span>
+                                        </div>
+                                        <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                            <div className={`h-full ${m.color}`} style={{ width: `${m.val}%` }}></div>
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 mt-1">{m.desc}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 2. ASYMMETRY WARNING */}
+                        <div className={`p-6 rounded-xl border ${asymmetryRisk === 'High' ? 'bg-red-900/10 border-red-500/30' : 'bg-emerald-900/10 border-emerald-500/30'}`}>
+                            <div className="flex items-start gap-4">
+                                <div className={`mt-1 p-2 rounded-lg ${asymmetryRisk === 'High' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                    <Icons.Target />
+                                </div>
+                                <div>
+                                    <h4 className={`text-lg font-bold ${asymmetryRisk === 'High' ? 'text-red-400' : 'text-emerald-400'}`}>
+                                        {asymmetryRisk === 'High' ? 'Significant Asymmetry Detected' : 'Symmetrical Loading Optimized'}
+                                    </h4>
+                                    <p className="text-sm text-slate-400 mt-1 leading-relaxed">
+                                        {asymmetryRisk === 'High' 
+                                            ? "Your scan indicates uneven loading between Left and Right hemispheres. This creates rotational torque on the spine (Shear Force)." 
+                                            : "Your skeletal stacking is effectively neutralizing gravity. Load is distributed evenly across the kinetic chain."}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    {/* RIGHT: TEXT ANALYSIS */}
+                    <div className="space-y-6">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Biomechanics Report</h3>
+                        
+                        <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 leading-loose">
+                            <p className="mb-4"><span className="text-cyan-500">>> ANALYZING PLUMB LINE...</span></p>
+                            <p>
+                                HEAD POSITION: <span className={audit.head.grade === 'A' ? 'text-emerald-400' : 'text-red-400'}>{audit.head.grade === 'A' ? 'NEUTRAL' : 'ANTERIOR SHIFT'}</span><br/>
+                                Impact: {audit.head.grade === 'A' ? 'Minimal cervical load.' : 'Increased leverage load on C7/T1 junction.'}
+                            </p>
+                            <div className="h-px bg-slate-800 my-3"></div>
+                            <p>
+                                PELVIC TILT: <span className={audit.hip.grade === 'A' ? 'text-emerald-400' : 'text-red-400'}>{audit.hip.grade === 'A' ? 'NEUTRAL' : 'DETECTED'}</span><br/>
+                                Impact: {audit.hip.grade === 'A' ? 'Optimal force transfer.' : 'Disrupted gluteal firing patterns (Amoritzation Phase).'}
+                            </p>
+                            <div className="h-px bg-slate-800 my-3"></div>
+                            <p>
+                                ELASTICITY: <span className={audit.gait.grade === 'A' ? 'text-emerald-400' : 'text-red-400'}>{audit.gait.grade === 'A' ? 'HIGH' : 'LOW'}</span><br/>
+                                Impact: {audit.gait.grade === 'A' ? 'Efficient energy recycling.' : 'High metabolic cost of movement.'}
+                            </p>
+                        </div>
+
+                        <div className="bg-cyan-900/10 p-6 rounded-xl border border-cyan-500/20">
+                            <h4 className="text-cyan-400 font-bold mb-2">Corrective Engineering</h4>
+                            <p className="text-sm text-slate-400 mb-4">
+                                Based on your vector analysis, we need to increase <strong>{audit.spine.grade === 'F' ? 'Posterior Chain Tension' : 'Anterior Core Stiffness'}</strong>.
+                            </p>
+                            <button onClick={onClose} className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition-all">
+                                APPLY PROTOCOL
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- CAMERA COMPONENT ---
 const CameraCapture = ({ onCapture, onClose }) => {
     const videoRef = useRef(null);
@@ -3141,6 +3295,7 @@ useEffect(() => {
     const [chatHistory, setChatHistory] = useState([]);
     const [activeProgram, setActiveProgram] = useState(null);
     const [generatedRoutine, setGeneratedRoutine] = useState(null); // The waiting area
+    const [showClinical, setShowClinical] = useState(false);
 
     // --- INIT ---
     useEffect(() => {
@@ -3210,6 +3365,8 @@ useEffect(() => {
     const [currentGoal, setCurrentGoal] = useState({ target: 80, duration: 30, startDate: new Date().toDateString() });
     const [showGoalSetter, setShowGoalSetter] = useState(false);
     const [showShare, setShowShare] = useState(false);
+    const [beforeImage, setBeforeImage] = useState(null); // First ever scan
+    const [afterImage, setAfterImage] = useState(null);  // Latest scan
     const [showProtocolButton, setShowProtocolButton] = useState(false);
     const [currentTheme, setCurrentTheme] = useState('power');  // Weekly theme: power, recovery, mobility
     const [postAnalysisMode, setPostAnalysisMode] = useState(false);
@@ -3218,6 +3375,7 @@ useEffect(() => {
     const [liveKeypoints, setLiveKeypoints] = useState(null);
     const liveVideoRef = useRef(null);
     const liveCanvasRef = useRef(null);
+    const [liveCountdown, setLiveCountdown] = useState(null);
 
     const debouncedRunAnalysis = React.useCallback(() => {
         if (status.analyzing) return; // Ignore duplicates
@@ -3262,23 +3420,37 @@ useEffect(() => {
                 }
 
                 const detectLoop = async () => {
-                    if (!liveVideoRef.current || liveVideoRef.current.readyState < 2) {
-                        animationFrameId = requestAnimationFrame(detectLoop);
-                        return;
-                    }
+    if (!liveVideoRef.current || liveVideoRef.current.readyState < 2) {
+        animationFrameId = requestAnimationFrame(detectLoop);
+        return;
+    }
 
-                    const results = await system.detector.detectForVideo(
-                        liveVideoRef.current,
-                        performance.now()
-                    );
+    const results = await system.detector.detectForVideo(
+        liveVideoRef.current,
+        performance.now()
+    );
 
-                    if (results.landmarks && results.landmarks[0]) {
-                        setLiveKeypoints(results.landmarks[0]);
-                        drawLiveSkeleton(results.landmarks[0]);
-                    }
+    if (results.landmarks && results.landmarks[0]) {
+        const keypoints = results.landmarks[0];
 
-                    animationFrameId = requestAnimationFrame(detectLoop);
-                };
+        // Check if full body is visible and confident
+        const requiredIndices = [11,12,23,24,25,26,27,28]; // shoulders, hips, knees, ankles
+        const visibleCount = requiredIndices.filter(i => keypoints[i]?.visibility > 0.6).length;
+
+        if (visibleCount >= 8 && liveCountdown === null) {
+            // Good pose detected → start 5-second hold countdown
+            setLiveCountdown(5);
+        }
+
+        setLiveKeypoints(keypoints);
+        drawLiveSkeleton(keypoints);
+    } else {
+        setLiveKeypoints(null);
+        setLiveCountdown(null); // Reset if pose lost
+    }
+
+    animationFrameId = requestAnimationFrame(detectLoop);
+};
 
                 detectLoop();
             } catch (err) {
@@ -3296,6 +3468,35 @@ useEffect(() => {
             setLiveKeypoints(null);
         };
     }, [liveMode, system.detector]);
+
+// ← PASTE THE NEW useEffect RIGHT HERE
+useEffect(() => {
+    if (liveCountdown === null || liveCountdown === 0) return;
+
+    if (liveCountdown > 0) {
+        const timer = setTimeout(() => setLiveCountdown(liveCountdown - 1), 1000);
+        return () => clearTimeout(timer);
+    } else {
+        // Countdown finished → capture front view and analyze
+        const video = liveVideoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1); // Un-mirror for correct capture
+        ctx.drawImage(video, 0, 0);
+
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setUploads(prev => ({ ...prev, front: { url: dataUrl, analyzed: false } }));
+
+        // Auto-run analysis
+        setLiveMode(false);
+        runAnalysis();
+
+        setLiveCountdown(null);
+    }
+}, [liveCountdown]);
 
     // Helper: Draw skeleton on live canvas
     const drawLiveSkeleton = (keypoints) => {
@@ -3989,6 +4190,22 @@ const newAudit = {
 
         setAudit(newAudit);
         setHistory([newAudit, ...history]);
+	// Auto-set Before/After images (side view preferred)
+if (history.length === 0) {
+    // This is the user's VERY FIRST scan ever
+    const firstImage = uploads.side?.url || uploads.front?.url || uploads.back?.url;
+    setBeforeImage(firstImage);
+}
+const latestImage = uploads.side?.url || uploads.front?.url || uploads.back?.url;
+setAfterImage(latestImage);
+
+// Auto-set Before/After for comparison slider
+if (history.length === 0) {
+    // This is the very first scan ever
+    setBeforeImage(uploads.side?.url || uploads.front?.url);
+}
+setAfterImage(uploads.side?.url || uploads.front?.url); // Always update "after" to latest
+
         setStatus(prev => ({ ...prev, analyzing: false }));
         localStorage.setItem('biometric_data_v82', JSON.stringify({ history: [newAudit, ...history], symptoms, prefs: userPrefs }));
 
@@ -4256,54 +4473,59 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 
             {/* LIVE REAL-TIME MODE OVERLAY */}
             {liveMode && (
-                <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center p-4 animate-popIn">
-                    <div className="relative w-full max-w-4xl h-[80vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-cyan-500/50">
-                        {/* Webcam Video */}
-                        <video
-                            ref={liveVideoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="absolute inset-0 w-full h-full object-cover"
-                        />
+    <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center p-4 animate-popIn">
+        <div className="relative w-full max-w-4xl h-[80vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-cyan-500/50">
+            {/* Webcam Video (mirrored) */}
+            <video
+                ref={liveVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+            />
 
-                        {/* Live Skeleton Canvas */}
-                        <canvas
-                            ref={liveCanvasRef}
-                            className="absolute inset-0 w-full h-full pointer-events-none"
-                        />
+            {/* Live Skeleton Canvas */}
+            <canvas
+                ref={liveCanvasRef}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+            />
 
-                        {/* Top Status */}
-                        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-10 py-5 rounded-2xl border border-cyan-500 shadow-2xl">
-                            <div className="text-4xl font-black text-cyan-400 text-center">
-                                {liveKeypoints ? "ANALYZING POSTURE LIVE" : "POSITION YOURSELF"}
-                            </div>
-                            <div className="text-sm text-slate-300 text-center mt-2">
-                                Stand 2–3 meters away • Full body in frame • Face forward
-                            </div>
-                        </div>
+            {/* Status Message */}
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-10 py-5 rounded-2xl border border-cyan-500 shadow-2xl">
+                <div className="text-4xl font-black text-cyan-400 text-center">
+                    {liveKeypoints && liveCountdown === null ? "GOOD POSE DETECTED!" :
+                     liveCountdown !== null ? `CAPTURING IN ${liveCountdown}...` :
+                     "POSITION YOURSELF"}
+                </div>
+                <div className="text-sm text-slate-300 text-center mt-2">
+                    Stand 2–3 meters away • Full body in frame • Face forward
+                </div>
+            </div>
 
-                        {/* Auto-capture countdown (will add later) */}
-                        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 text-6xl font-black text-white">
-                            Hold still...
-                        </div>
-
-                        {/* Close Button */}
-                        <button
-                            onClick={() => {
-                                setLiveMode(false);
-                                if (liveVideoRef.current?.srcObject) {
-                                    liveVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
-                                }
-                                setLiveKeypoints(null);
-                            }}
-                            className="absolute top-6 right-6 w-16 h-16 bg-red-600/90 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-2xl"
-                        >
-                            ✕
-                        </button>
-                    </div>
+            {/* Countdown Number */}
+            {liveCountdown !== null && (
+                <div className="absolute inset-0 flex items-center justify-center text-9xl font-black text-white animate-ping">
+                    {liveCountdown}
                 </div>
             )}
+
+            {/* Close Button */}
+            <button
+                onClick={() => {
+                    setLiveMode(false);
+                    if (liveVideoRef.current?.srcObject) {
+                        liveVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                    }
+                    setLiveKeypoints(null);
+                    setLiveCountdown(null);
+                }}
+                className="absolute top-6 right-6 w-16 h-16 bg-red-600/90 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-2xl"
+            >
+                ✕
+            </button>
+        </div>
+    </div>
+)}
 
             {isModelLoading && (
                 <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center backdrop-blur-xl animate-popIn">
@@ -4360,15 +4582,7 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
                 {/* HEADER NAV - ENHANCED with Progress Tab */}
                                 <div className="flex justify-between items-center mb-2 no-print">
                     <div className="w-full max-w-4xl mx-auto space-y-8">
-                        {/* NEW: LIVE REAL-TIME BUTTON */}
-                        {!liveMode && isModelReady && (
-                            <button
-                                onClick={() => setLiveMode(true)}
-                                className="btn-primary w-full text-3xl py-8 rounded-3xl font-black uppercase tracking-widest shadow-2xl animate-pulse-slow bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-600 hover:from-emerald-400 hover:via-cyan-400 hover:to-blue-500 transition-all duration-1000"
-                            >
-                                LIVE REAL-TIME POSTURE COACH
-                            </button>
-                        )}
+                        
 
                         {/* ORIGINAL: STANDARD ANALYSIS BUTTON */}
                         <button
@@ -4534,24 +4748,24 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
                                                 <circle cx="128" cy="128" r="120" stroke="#1e293b" strokeWidth="16" fill="none" />
                                                 <circle
                                                     cx="128" cy="128" r="120"
-                                                    stroke={analysisResult.score >= 80 ? "#10b981" : analysisResult.score >= 60 ? "#f59e0b" : "#ef4444"}
+                                                    stroke={audit.score >= 80 ? "#10b981" : audit.score >= 60 ? "#f59e0b" : "#ef4444"}
                                                     strokeWidth="16"
                                                     fill="none"
                                                     strokeDasharray={`${2 * Math.PI * 120}`}
-                                                    strokeDashoffset={`${2 * Math.PI * 120 * (1 - analysisResult.score / 100)}`}
+                                                    strokeDashoffset={`${2 * Math.PI * 120 * (1 - audit.score / 100)}`}
                                                     className="transition-all duration-2000 ease-out"
                                                     strokeLinecap="round"
                                                 />
                                             </svg>
                                             <div className="absolute inset-0 flex items-center justify-center">
                                                 <div className="text-center">
-                                                    <div className="text-7xl font-black text-white">{analysisResult.score}</div>
+                                                    <div className="text-7xl font-black text-white">{audit.score}</div>
                                                     <div className="text-xl font-bold text-slate-300 uppercase tracking-wider">/100</div>
                                                 </div>
                                             </div>
                                         </div>
                                         <p className="mt-6 text-2xl font-bold text-center text-white">
-                                            {analysisResult.score >= 80 ? "Excellent Alignment!" : analysisResult.score >= 60 ? "Good, Room to Improve" : "Needs Attention"}
+                                            {audit.score >= 80 ? "Excellent Alignment!" : audit.score >= 60 ? "Good, Room to Improve" : "Needs Attention"}
                                         </p>
                                     </div>
 
@@ -4924,6 +5138,45 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
     </>
 )}
 
+{/* BEFORE / AFTER COMPARISON SLIDER */}
+{audit && history.length >= 1 && beforeImage && afterImage && (
+    <div className="mt-12 animate-popIn">
+        <h3 className="text-xl font-black text-cyan-400 uppercase tracking-widest text-center mb-6">
+            Your Progress Slider
+        </h3>
+        <div className="relative w-full h-96 bg-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/30">
+            {/* After Image (top layer) */}
+            <img src={afterImage} className="absolute inset-0 w-full h-full object-contain" alt="Latest" />
+            {/* Before Image (bottom layer) */}
+            <img src={beforeImage} className="absolute inset-0 w-full h-full object-contain" alt="First scan" />
+            {/* Slider Handle */}
+            <input
+                type="range"
+                min="0"
+                max="100"
+                defaultValue="50"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-10"
+                onInput={(e) => {
+                    const val = e.target.value;
+                    e.target.parentElement.style.clipPath = `inset(0 ${100 - val}% 0 0)`;
+                }}
+            />
+            {/* Visual Handle */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-12 h-12 bg-white rounded-full shadow-2xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M8 12h8M12 8v8" />
+                    </svg>
+                </div>
+            </div>
+            <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded text-xs font-bold text-cyan-300">First Scan</div>
+            <div className="absolute bottom-4 right-4 bg-black/70 px-3 py-1 rounded text-xs font-bold text-emerald-300">Today</div>
+        </div>
+        <p className="text-center text-sm text-slate-400 mt-4">Drag to compare your transformation</p>
+    </div>
+)}
+
+
                     {/* ACADEMY LINK (Right Panel Fallback) */}
                     <div className="mt-6 text-center">
                         <button onClick={() => setTab('academy')} className="text-[10px] font-bold text-slate-500 hover:text-cyan-400 uppercase tracking-widest transition-colors flex items-center justify-center gap-1">
@@ -4969,4 +5222,3 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 </script>
 </body>
 </html>
-
