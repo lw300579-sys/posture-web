@@ -744,6 +744,8 @@ const EXERCISE_DB = [
             videoSearch: "medicine ball rotational slam"
         }]
     }
+
+
 ];
 
 // --- NEW: GOAL PRESETS (For Retention) ---
@@ -978,30 +980,53 @@ const KineticCanvas = ({ type, playing }) => {
     const animationRef = useRef(null);
 
     useEffect(() => {
+        const canvas = ref.current;
         if (animationRef.current) cancelAnimationFrame(animationRef.current);
-        const ctx = ref.current.getContext('2d', { alpha: false });
-        if (!ctx) return;
-        // We define these ONCE here so the loop below can use them
-        const rect = ref.current.getBoundingClientRect();
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d', { alpha: false });
         const dpr = window.devicePixelRatio || 1;
-        ref.current.width = rect.width * dpr;
-        ref.current.height = rect.height * dpr;
-        ctx.scale(dpr, dpr);
 
-        const w = rect.width, h = rect.height, cx = w / 2, cy = h / 2, s = h / 350;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
+        // Mutable variables that update when screen resizes
+        let w, h, cx, cy, s;
+        let offscreen, offCtx;
 
-        // Static grid—draw once to offscreen (cuts 50% draw calls)
-        const offscreen = document.createElement('canvas');
-        offscreen.width = w * dpr;
-        offscreen.height = h * dpr;
-        const offCtx = offscreen.getContext('2d');
-        offCtx.scale(dpr, dpr);  // Match main ctx for crisp lines
-        offCtx.strokeStyle = '#1e293b'; offCtx.lineWidth = 1; offCtx.beginPath();
-        for (let i = 0; i < w; i += 40) { offCtx.moveTo(i, 0); offCtx.lineTo(i, h); }
-        for (let i = 0; i < h; i += 40) { offCtx.moveTo(0, i); offCtx.lineTo(w, i); }
-        offCtx.stroke();
+        const handleResize = () => {
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+
+            // 1. Resize Canvas Buffer
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            // 2. Update Physics Variables (The Fix)
+            w = rect.width;
+            h = rect.height;
+            cx = w / 2;
+            cy = h / 2;
+            s = h / 350; // <--- This now updates instantly when layout opens!
+
+            // 3. Re-draw Grid
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            
+            offscreen = document.createElement('canvas');
+            offscreen.width = w * dpr;
+            offscreen.height = h * dpr;
+            offCtx = offscreen.getContext('2d');
+            offCtx.scale(dpr, dpr);
+            offCtx.strokeStyle = '#1e293b'; 
+            offCtx.lineWidth = 1; 
+            offCtx.beginPath();
+            for (let i = 0; i < w; i += 40) { offCtx.moveTo(i, 0); offCtx.lineTo(i, h); }
+            for (let i = 0; i < h; i += 40) { offCtx.moveTo(0, i); offCtx.lineTo(w, i); }
+            offCtx.stroke();
+        };
+
+        // Attach the listener
+        const observer = new ResizeObserver(handleResize);
+        observer.observe(canvas);
         let startTime = Date.now();
         let lastFrameTime = 0;  // NEW: Tracks last draw time
         const targetFPS = 30;  // NEW: Cap at 30 (smooth, low CPU)
@@ -1607,34 +1632,78 @@ const KineticCanvas = ({ type, playing }) => {
                     ctx.restore();
                 }
                 else if (type === 'towel_curl') {
-                    const footY = cy + 60 * s; const ankleX = cx;
-                    const heelX = ankleX - 25 * s; const toeX = ankleX + 35 * s;
-                    const lift = 10 * s;
-                    const towelY = footY + 5 * s;
-                    const crunchPhase = easeInOutCubic(Math.abs(Math.sin(t * 3)));
-                    const crunch = crunchPhase * 15 * s;
-                    drawEquipment('towel', toeX, towelY, 0);
-                    ctx.beginPath(); ctx.moveTo(toeX + 20 * s, towelY);
-                    ctx.quadraticCurveTo(toeX, towelY - crunch, toeX - 30 * s, towelY);
-                    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 6; ctx.stroke();
-                    ctx.beginPath(); ctx.moveTo(heelX, footY - lift);
-                    ctx.quadraticCurveTo(ankleX, footY - lift - 15 * s, toeX, footY);
-                    ctx.lineWidth = 4; ctx.strokeStyle = '#38bdf8'; ctx.stroke();
-                    const toeCurlPhase = easeInOutCubic(Math.abs(Math.sin(t * 3)));
-                    const toeCurl = toeCurlPhase * 8 * s;
-                    ctx.beginPath(); ctx.moveTo(toeX, footY);
-                    ctx.quadraticCurveTo(toeX + 10 * s, footY - 10 * s, toeX - toeCurl, footY + 5 * s);
-                    ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 4; ctx.stroke();
-                    drawMuscle(toeX, footY, toeX - toeCurl, footY + 5 * s, 6 * s, true, "TOE SCRUNCH", 'left');
-                    ctx.fillStyle = '#22d3ee'; ctx.font = 'bold 10px sans-serif'; ctx.fillText("SCRUNCH TOWEL", cx - 80 * s, cy - 20 * s);
-                    drawForce(toeX, footY, -1, 0.2, "");
-                    // Actionable cue: Toe curl pulse
-                    if (toeCurlPhase > 0.5) {
-                        ctx.save(); ctx.globalAlpha = 0.5 + Math.sin(t * 5) * 0.3;
-                        drawForce(toeX - toeCurl, footY + 5 * s, -1, 0, "PULL TOWEL");
-                        ctx.restore();
-                    }
-                }
+    // PHYSICS: The "Windlass Mechanism" + Cloth Simulation
+    // As toes curl (flex), the arch MUST rise, and the towel MUST bunch up.
+    
+    const cycle = easeInOutCubic((Math.sin(t * 2.5) + 1) / 2); // 0 (flat) to 1 (curled)
+    const heelX = cx - 35 * s;
+    const ballX = cx + 25 * s;
+    const footY = cy + 80 * s; // Ground level
+    
+    // 1. Arch Mechanics (Windlass)
+    // The arch rises as the toes curl. This is the bio-mechanical goal.
+    const archHeight = 10 * s + (cycle * 15 * s); 
+    const ankleX = cx - 10 * s;
+    const ankleY = footY - 40 * s - (cycle * 5 * s); // Ankle rises slightly
+
+    // Draw Leg
+    drawSegment(ankleX, ankleY, ankleX + 5 * s, cy - 40 * s, 14 * s, '#475569'); // Shin
+    
+    // Draw Foot (Heel -> Arch -> Ball)
+    ctx.beginPath();
+    ctx.moveTo(heelX, footY);
+    ctx.quadraticCurveTo(cx, footY - archHeight, ballX, footY);
+    ctx.lineWidth = 14 * s;
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    
+    // 2. Toe Dexterity (The "Grip")
+    // Toes don't just bend; they hook downwards and pull back.
+    const toeLen = 20 * s;
+    const toeCurlAngle = cycle * Math.PI * 0.6; // Bend 100 degrees
+    const toeX = ballX + Math.cos(toeCurlAngle) * toeLen;
+    const toeY = footY + Math.sin(toeCurlAngle) * toeLen * 0.6; // Flatten on floor
+    
+    ctx.beginPath();
+    ctx.moveTo(ballX, footY);
+    ctx.quadraticCurveTo(ballX + 10 * s, footY - (cycle * 10 * s), toeX, toeY);
+    ctx.lineWidth = 14 * s;
+    ctx.strokeStyle = '#22d3ee';
+    ctx.stroke();
+
+    // 3. CLOTH SIMULATION (The Towel)
+    // We draw the towel as a sine wave that increases in amplitude (bunching)
+    // and decreases in length (gathering) as toes curl.
+    ctx.beginPath();
+    const towelStart = ballX;
+    const towelLen = 80 * s * (1 - cycle * 0.4); // Towel gets shorter as it bunches
+    const bunches = 6;
+    
+    ctx.moveTo(towelStart, footY + 8 * s);
+    
+    for (let i = 0; i <= bunches; i++) {
+        const x = towelStart + (i / bunches) * towelLen;
+        // Amplitude grows with cycle. Sine wave creates "wrinkles"
+        const y = footY + 8 * s - Math.sin(i * Math.PI) * (cycle * 12 * s); 
+        ctx.lineTo(x, y);
+    }
+    
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4 * s;
+    ctx.strokeStyle = '#e2e8f0'; // White towel
+    ctx.stroke();
+    
+    // 4. Visual Feedback
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${12 * s}px sans-serif`; ctx.fillText("INTRINSIC FOOT STRENGTH", 20, 30);
+    
+    // Highlight the Arch rising (The "Why")
+    if (cycle > 0.6) {
+        drawForce(cx, footY - archHeight + 10 * s, 0, -1, "ARCH LIFT");
+        ctx.fillStyle = '#22d3ee'; ctx.font = `bold ${10 * s}px sans-serif`; 
+        ctx.fillText("WINDLASS ON", cx - 20 * s, cy);
+    }
+}
                 else if (type === 'pallof_press') {
                     const pressPhase = easeInOutCubic(Math.abs(Math.sin(t * 2.2)));
                     const press = pressPhase * 35 * s;
@@ -1762,12 +1831,56 @@ const KineticCanvas = ({ type, playing }) => {
                         drawMuscle(cx + 4 * s, hipY + 10 * s, cx + 4 * s, shoulderY - 10 * s, 12 * s, true);
                     }
 
-                    // Arms up
-                    drawSegment(cx - 25 * s, shoulderY, cx + 25 * s, shoulderY, 12 * s, '#475569');
-                    const armAngle = -Math.PI / 2 - armReachPhase * (Math.PI / 2);
-                    const armLen = 55 * s;
-                    drawSegment(cx - 20 * s, shoulderY, cx - 20 * s, shoulderY + Math.cos(armAngle) * armLen, 10 * s, '#38bdf8');
-                    drawSegment(cx + 20 * s, shoulderY, cx + 20 * s, shoulderY + Math.cos(armAngle) * armLen, 10 * s, '#38bdf8');
+                    // --- NEW REALISTIC HOLDING ARMS ---
+// 1. Define the ball's position (it moves with the head breath)
+const ballY = headY - 38 * s; // Matches the ball drawing coordinate
+
+// 2. Define Shoulders (Fixed)
+const shL_x = cx - 20 * s; 
+const shR_x = cx + 20 * s;
+const sh_y = shoulderY;
+
+// 3. Define Target Hand Positions (Holding sides of ball)
+const handL_target_x = cx - 14 * s; // Left hand on left side of ball
+const handR_target_x = cx + 14 * s; // Right hand on right side of ball
+const hand_target_y = ballY;
+
+// 4. Define Target Elbow Positions (Flared out for stability)
+const elbowL_target_x = cx - 45 * s;
+const elbowR_target_x = cx + 45 * s;
+const elbow_target_y = (sh_y + ballY) / 2; // Midpoint vertically
+
+// 5. Define Start Positions (Hands at sides)
+const handL_start_x = cx - 25 * s;
+const handR_start_x = cx + 25 * s;
+const hand_start_y = cy + 40 * s; // Hips
+
+const elbowL_start_x = cx - 30 * s; 
+const elbowR_start_x = cx + 30 * s;
+const elbow_start_y = cy + 10 * s;
+
+// 6. Interpolate based on armReachPhase (Smooth animation up)
+const reach = easeInOutCubic(armReachPhase); 
+
+const hLx = handL_start_x + (handL_target_x - handL_start_x) * reach;
+const hLy = hand_start_y + (hand_target_y - hand_start_y) * reach;
+const eLx = elbowL_start_x + (elbowL_target_x - elbowL_start_x) * reach;
+const eLy = elbow_start_y + (elbow_target_y - elbow_start_y) * reach;
+
+const hRx = handR_start_x + (handR_target_x - handR_start_x) * reach;
+const hRy = hand_start_y + (hand_target_y - hand_start_y) * reach;
+const eRx = elbowR_start_x + (elbowR_target_x - elbowR_start_x) * reach;
+const eRy = elbow_start_y + (elbow_target_y - elbow_start_y) * reach;
+
+// 7. Draw The Arms (Shoulder -> Elbow -> Hand)
+drawSegment(shL_x, sh_y, eLx, eLy, 10 * s, '#cbd5e1'); // Left Upper
+drawSegment(eLx, eLy, hLx, hLy, 9 * s, '#cbd5e1');     // Left Forearm
+drawSegment(shR_x, sh_y, eRx, eRy, 10 * s, '#cbd5e1'); // Right Upper
+drawSegment(eRx, eRy, hRx, hRy, 9 * s, '#cbd5e1');     // Right Forearm
+
+// Draw Hands gripping (Small circles)
+ctx.beginPath(); ctx.arc(hLx, hLy, 5 * s, 0, 2 * Math.PI); ctx.fillStyle = '#22d3ee'; ctx.fill();
+ctx.beginPath(); ctx.arc(hRx, hRy, 5 * s, 0, 2 * Math.PI); ctx.fillStyle = '#22d3ee'; ctx.fill();
 
                     // Head & ball - perfectly stable
                     ctx.beginPath(); ctx.arc(headX, headY, 22 * s, 0, 2 * Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill();
@@ -2402,7 +2515,10 @@ const KineticCanvas = ({ type, playing }) => {
             if (playing) animationRef.current = requestAnimationFrame(loop);
         };
         loop();
-        return () => cancelAnimationFrame(animationRef.current);
+        return () => {
+            observer.disconnect(); // Stop listening to resize
+            cancelAnimationFrame(animationRef.current);
+        };
     }, [type, playing]);
     return <canvas ref={ref} className="relative w-full h-full bg-slate-950 rounded-lg shadow-inner overflow-hidden" />;
 };
@@ -4241,178 +4357,248 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
         setTimeout(() => confettiContainer.remove(), 4000);
         // --- END DRAMATIC FINALE ---
     };
-    // --- HYPER-PERSONALIZED STRATIFIED ENGINE (V90.0 SCORING MATRIX) ---
-    const generateProgram = () => {
-        if (!audit) return;
+    // --- V101.0 APEX ARCHITECT ENGINE (TRUE VARIANCE & ROULETTE SELECTION) ---
+const generateProgram = () => {
+    if (!audit) return;
 
-        // 1. Determine current training phase based on total sessions
-        const totalSessions = history.length;
-        let currentPhase = 1;
-        if (totalSessions >= 30) currentPhase = 4;
-        else if (totalSessions >= 15) currentPhase = 3;
-        else if (totalSessions >= 7) currentPhase = 2;
+    // 1. PHASE CALCULATOR
+    const score = audit.score;
+    let userPhase = 1;
+    if (score >= 85) userPhase = 5;      
+    else if (score >= 75) userPhase = 3; 
+    else if (score >= 65) userPhase = 2; 
+    else userPhase = 1;                  
 
-        // 2. Mastery = 2 consecutive "good" ratings OR level ≥2
-        const isMastered = (exId) => {
-            const h = exerciseHistory[exId];
-            return h && (h.goodStreaks >= 2 || (h.lastLevel >= 1));
-        };
+    if (history.length < 5) userPhase = 1;
 
-        // 3. Score every exercise in the database
-        let scoredPool = EXERCISE_DB.map(ex => {
-            let score = 0;
-            let reasons = [];
+    const parts = ['head', 'shoulders', 'spine', 'hip', 'gait'];
 
-            // Hard filters (safety)
-            if (!useEquipment && ex.equipment === 'required') return null;
-            if (userPrefs.noEquipment && ex.equipment === 'required') return null;
-            if (userPrefs.lowImpact && (ex.pattern.includes('power') || ex.pattern.includes('hop'))) return null;
-            if (userPrefs.noJumps && (ex.id.includes('hop') || ex.id.includes('bounce'))) return null;
 
-            // Prerequisite mastery gate
-            if (ex.requires_mastery && !ex.requires_mastery.every(isMastered)) return null;
+// 1. GRANULAR PHASE CALCULATOR (Per-Part)
+const partPhases = {};
+parts.forEach(part => {  // parts is always defined as array, no error
+    const partScore = audit[part]?.val || 70;  // Safe fallback if audit[part] undefined
+    let phase = 1;
+    if (partScore >= 85) phase = 5;
+    else if (partScore >= 75) phase = 3;
+    else if (partScore >= 65) phase = 2;
+    if (history.length < 5) phase = Math.min(phase, 2); // Cap early users
+    partPhases[part] = phase;
+});
 
-            // Biomechanical priority (weakest link gets huge boost)
-            const targetScore = audit[ex.target_grade]?.val || 100;
-            if (targetScore < 60) { score += 80; reasons.push("Critical Weakness"); }
-            else if (targetScore < 75) { score += 50; reasons.push("High Priority"); }
-            else if (targetScore < 85) { score += 20; }
+// Use average for global, but per-part for filtering
+userPhase = Math.floor(Object.values(partPhases).reduce((a,b) => a+b, 0) / parts.length);
 
-            // Pain/symptom direct hit
-            if (ex.synergies && ex.synergies.some(s => symptoms.includes(s))) {
-                score += 60;
-                reasons.push("Direct Pain Relief");
-            }
+// WEEKLY THEME (Cycles every week)
+const now = new Date();
+const start = new Date(now.getFullYear(), 0, 1);
+const diff = (now - start) + ((start.getDay() === 0 ? -6 : 1) - start.getDay()) * 86400000;
+const week_num = Math.ceil(diff / 604800000);  // 604800000 = 7 days ms
+const themes = ['power', 'recovery', 'mobility'];
+const currentTheme = themes[week_num % 3];
 
-            // Phase alignment
-            if (ex.phase === currentPhase) { score += 30; reasons.push(`Phase ${currentPhase}`); }
-            else if (ex.phase === currentPhase + 1) { score += 10; } // Prepare for next phase
-            else if (ex.phase < currentPhase && isMastered(ex.id)) { score += 15; reasons.push("Maintenance"); }
+    // 2. TARGET IDENTIFICATION
+    const sortedParts = parts.sort((a, b) => audit[a].val - audit[b].val);
+    const weakestLink = sortedParts[0];
+    const secondaryLink = sortedParts[1];
 
-            // Variety / anti-boredom
-            const hist = exerciseHistory[ex.id];
-            const today = new Date().toDateString();
-            if (hist?.lastUsed === today) score -= 1000; // Never repeat same day
-            else if (hist?.goodStreaks >= 2) { score += 25; reasons.push("Mastered – Bonus Flow"); }
+// SYMPTOM SEVERITY CALC (0-1 scale)
+const symptomSeverity = symptoms.length / 4; // Max 4 symptoms, safe /0=0
+const symptomMap = {
+    'Neck Pain': ['head', 'shoulders'],
+    'Back Pain': ['spine', 'hip'],
+    'Knee Pain': ['gait', 'hip'],
+    'Foot Pain': ['gait']
+};
 
-            // New stimulus bonus
-            if (!hist) { score += 20; reasons.push("Fresh Movement"); }
+// Combo Detection (e.g., neck+back = spine bonus)
+const affectedParts = new Set();
+symptoms.forEach(sym => {  // symptoms is always array (empty ok)
+    const mapped = symptomMap[sym] || [];  // Safe empty array if no match
+    mapped.forEach(p => affectedParts.add(p));  // forEach on safe array
+});
 
-            return { ...ex, score, smartReason: reasons[0] || "Balanced Development" };
-        }).filter(Boolean);
+    // 3. RETRIEVE GLOBAL USAGE STATS (Total times done)
+    // We calculate this on the fly to penalize over-used moves
+    const globalUsage = {};
+    Object.keys(exerciseHistory).forEach(key => {
+        // We use a rough estimate based on history length or specific counters if you added them
+        // For now, we assume if it's in history, it's been done at least once + goodStreaks
+        globalUsage[key] = (exerciseHistory[key].goodStreaks || 0) + 1; 
+    });
 
-        // 4. Sort descending by score
-        scoredPool.sort((a, b) => b.score - a.score);
+    // 4. GENERATE LOTTERY POOL
+    let lotteryPool = EXERCISE_DB.map(ex => {
+        // --- HARD FILTERS ---
+        if (!useEquipment && ex.equipment === 'required') return null;
+        if (userPrefs.noEquipment && ex.equipment === 'required') return null;
+        if (userPrefs.lowImpact && ex.pattern.includes('power')) return null;
+        if (userPrefs.noJumps && (ex.id.includes('hop') || ex.id.includes('bounce'))) return null;
+        if (ex.requires_mastery && !ex.requires_mastery.every(id => exerciseHistory[id]?.goodStreaks >= 2)) return null;
 
-        // 5. Select 6 exercises with pattern diversity
-        const selected = [];
-        const usedPatterns = new Set();
+        // --- TICKET ALLOCATION (The Weighting) ---
+        let tickets = 100; 
 
-        // First pass: take the absolute highest priority (even if same pattern)
-        for (const ex of scoredPool) {
-            if (selected.length >= 3) break;
-            if (ex.score > 40) {
-                selected.push(ex);
-                usedPatterns.add(ex.pattern);
-            }
+        // A. Relevance (The Need)
+        if (ex.target_grade === weakestLink) tickets += 300;       
+        else if (ex.target_grade === secondaryLink) tickets += 150; 
+        else if (audit[ex.target_grade]?.val < 70) tickets += 50; 
+
+        // B. Pain Synergy (The Override)
+        if (ex.synergies && ex.synergies.some(s => symptoms.includes(s))) {
+            tickets += 500; 
+// B. Pain Synergy + Severity (Dynamic Multiplier)
+let painBoost = 0;
+if (ex.synergies && Array.isArray(ex.synergies)) {  // Guard Array.isArray
+    const matches = ex.synergies.filter(s => symptoms.includes(s)).length;
+    painBoost = matches * 300 * (1 + symptomSeverity); // Base 300, up to 600 if severe
+    if (affectedParts.has(ex.target_grade)) painBoost *= 1.5; // Combo 50% extra
+}
+tickets += painBoost;
         }
 
-        // Second pass: fill with highest scoring unique patterns
-        for (const ex of scoredPool) {
-            if (selected.length >= 6) break;
-            if (!usedPatterns.has(ex.pattern) && !selected.some(s => s.id === ex.id)) {
-                selected.push(ex);
-                usedPatterns.add(ex.pattern);
-            }
+        // C. Phase Alignment
+        if (ex.phase === userPhase) tickets += 150;       
+        else if (ex.phase === userPhase - 1) tickets += 50; 
+        else if (ex.phase > userPhase) tickets = 0; // Hard lock on future content
+
+// In lotteryPool map, after C:
+if (currentTheme === 'power' && ex.pattern.includes('power')) {
+    tickets += 200;
+} else if (currentTheme === 'recovery' && ex.pattern.includes('release')) {
+    tickets += 200;
+} else if (currentTheme === 'mobility' && ex.pattern.includes('flow')) {
+    tickets += 200;
+}
+
+        // D. VARIANCE ENGINE (The Fix)
+        const hist = exerciseHistory[ex.id];
+        const lastDate = hist?.lastUsed;
+        const today = new Date().toDateString();
+        
+        // 1. Immediate Staleness (Nuclear Penalty)
+        // If done today, reduce chance by 99% (but leave 1% in case DB is small)
+        if (lastDate === today) tickets *= 0.01; 
+
+        // 2. Inverse Frequency (The "Variety" Enforcer)
+        // The more you've done it, the less likely it is.
+        const timesDone = globalUsage[ex.id] || 0;
+        if (timesDone > 0) {
+            // Decay formula: Tickets / (1 + (timesDone * 0.2))
+            // Example: Done 5 times = Tickets / 2.
+            tickets = tickets / (1 + (timesDone * 0.25)); 
         }
 
-        // Third pass: fill any gaps with next best
-        for (const ex of scoredPool) {
-            if (selected.length >= 6) break;
-            if (!selected.some(s => s.id === ex.id)) selected.push(ex);
+        // 3. Discovery Bonus (The "New" Boost)
+        if (!hist) tickets += 400; // Massive boost for untouched exercises
+
+        // 4. Session Exclusion (Prevent "Generate" -> "Generate" duplicates)
+        // If this exercise is in the currently displayed routine, kill its tickets
+        if (activeProgram && activeProgram.some(p => p.id === ex.id)) {
+             tickets *= 0.001;
         }
 
-        // 6. Map to personalized level + duration
-        const routine = selected.map(ex => {
-            const hist = exerciseHistory[ex.id] || {};
-            let levelIdx = 0;
+        return { ...ex, tickets: Math.max(1, Math.floor(tickets)) };
+    }).filter(e => e && e.tickets > 0);
 
-            // Progressive overload logic
-            if (hist.lastRating === 'easy' && hist.goodStreaks >= 1) {
-                levelIdx = Math.min(ex.levels.length - 1, (hist.lastLevel || 0) + 1);
-            } else if (hist.lastRating === 'hard') {
-                levelIdx = Math.max(0, (hist.lastLevel || 0) - 1);
-            } else if (hist.lastLevel !== undefined) {
-                levelIdx = hist.lastLevel;
-            } else if (audit[ex.target_grade]?.val >= 85) {
-                levelIdx = Math.min(2, ex.levels.length - 1); // Start higher if strong
-            }
+    // 5. ROULETTE WHEEL SELECTION 
+    // This replaces the "Sort and Slice" method. 
+    // It creates a probability distribution so lower scores still have a chance.
+    const routine = [];
+    const usedPatterns = new Set();
+    const usedIDs = new Set();
 
-            const level = ex.levels[levelIdx] || ex.levels[0];
+    const drawFromPool = (pool, criteriaFn, reasonLabel) => {
+        // Filter candidates
+        let candidates = pool.filter(ex => !usedIDs.has(ex.id) && criteriaFn(ex));
+        
+        // Pattern diversity filter (Soft filter)
+        const freshPatternCandidates = candidates.filter(ex => !usedPatterns.has(ex.pattern));
+        if (freshPatternCandidates.length > 0) candidates = freshPatternCandidates;
 
-            // Mark as used today
-            setExerciseHistory(prev => ({
-                ...prev,
-                [ex.id]: { ...hist, lastUsed: new Date().toDateString(), lastLevel: levelIdx }
-            }));
+        if (candidates.length === 0) return null;
 
-            return {
-                ...level,
-                id: ex.id,
-                baseTitle: ex.title,
-                reason: ex.smartReason,
-                allLevels: ex.levels,
-                currentLevelIdx: levelIdx,
-                duration: level.duration || (levelIdx === 0 ? 60 : levelIdx === 1 ? 90 : 120) // Longer at higher levels
-            };
-        });
+        // ROULETTE LOGIC
+        const totalWeight = candidates.reduce((sum, ex) => sum + ex.tickets, 0);
+        let randomValue = Math.random() * totalWeight;
+        let selected = null;
 
-        // Streak Bonus: Add one advanced flow on 7+ day streak
-        if (streakDays >= 7 && routine.length < 7) {
-            const bonusCandidates = EXERCISE_DB.filter(ex => 
-                ex.phase >= 3 && 
-                ex.levels.length >= 3 &&
-                !routine.some(r => r.id === ex.id)
-            );
-            if (bonusCandidates.length > 0) {
-                const bonusEx = bonusCandidates[0];
-                const bonusLevel = bonusEx.levels[Math.min(2, bonusEx.levels.length - 1)];
-                routine.push({
-                    ...bonusLevel,
-                    id: bonusEx.id,
-                    baseTitle: bonusEx.title + " (Streak Bonus)",
-                    reason: "Fire Streak Unlock",
-                    allLevels: bonusEx.levels,
-                    currentLevelIdx: Math.min(2, bonusEx.levels.length - 1),
-                    duration: 120
-                });
+        for (const ex of candidates) {
+            randomValue -= ex.tickets;
+            if (randomValue <= 0) {
+                selected = ex;
+                break;
             }
         }
+        // Fallback (rare rounding errors)
+        if (!selected) selected = candidates[candidates.length - 1];
 
-// Elite Bonus: If score > 85, add one Phase 5 flow
-        if (audit.score > 85 && routine.length < 8) {
-            const eliteCandidates = EXERCISE_DB.filter(ex => 
-                ex.phase >= 5 && !routine.some(r => r.id === ex.id)
-            );
-            if (eliteCandidates.length > 0) {
-                const elite = eliteCandidates[0];
-                const level = elite.levels[0];
-                routine.push({
-                    ...level,
-                    id: elite.id,
-                    baseTitle: elite.title + " (Elite Unlock)",
-                    reason: "Elite Performance Flow",
-                    allLevels: elite.levels,
-                    currentLevelIdx: 0,
-                    duration: 60
-                });
-            }
+        if (selected) {
+            routine.push({ ...selected, smartReason: reasonLabel });
+            usedPatterns.add(selected.pattern);
+            usedIDs.add(selected.id);
         }
-
-
-        setGeneratedRoutine(routine);
-        addLog(`Elite Protocol Built — Phase ${currentPhase} | ${routine.length} Movements`);
+        return selected;
     };
+
+    // --- SLOT CONFIGURATION ---
+
+    // Slot 1: The Critical Fix (Must hit weak link or pain)
+    drawFromPool(lotteryPool, ex => ex.target_grade === weakestLink || (ex.synergies && ex.synergies.some(s => symptoms.includes(s))), `Primary Fix: ${weakestLink.toUpperCase()}`);
+
+    // Slot 2: The Secondary Support
+    drawFromPool(lotteryPool, ex => ex.target_grade === secondaryLink, `Support: ${secondaryLink.toUpperCase()}`);
+
+    // Slot 3: Phase Power (The "Fun" one)
+    drawFromPool(lotteryPool, ex => ex.phase === userPhase, `Phase ${userPhase} Power`);
+
+    // Slot 4: Structural Balance (Opposite pattern of what we've picked)
+    drawFromPool(lotteryPool, ex => true, "Structural Balance");
+
+    // Slot 5: Discovery (Prioritize things with high tickets - likely new ones)
+    drawFromPool(lotteryPool, ex => !exerciseHistory[ex.id], "New Stimulus");
+
+    // Slot 6: Wildcard (Pure Chaos)
+    drawFromPool(lotteryPool, ex => true, "System Flush");
+
+    // Failsafe fill
+    while (routine.length < 4 && lotteryPool.length > routine.length) {
+        drawFromPool(lotteryPool, ex => true, "Volume Filler");
+    }
+
+    // 6. BUILD FINAL OBJECTS
+    const finalRoutine = routine.map(ex => {
+        const hist = exerciseHistory[ex.id] || {};
+        let levelIdx = hist.lastLevel || 0;
+
+        // Smart Progression
+        if (hist.lastRating === 'easy') levelIdx = Math.min(ex.levels.length - 1, levelIdx + 1);
+        else if (hist.lastRating === 'hard') levelIdx = Math.max(0, levelIdx - 1);
+        else if (userPhase >= 3 && ex.levels.length > 2) levelIdx = Math.max(levelIdx, 1);
+
+// MASTERY GATE: Lock levels >2 until phase >=3 or goodStreaks >=2
+if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
+    levelIdx = 1; // Force regress to safe level
+}
+
+        const levelData = ex.levels[levelIdx] || ex.levels[0];
+        let duration = levelData.duration || 60;
+        if (userPhase >= 4) duration += 30; 
+
+        return {
+            ...levelData,
+            id: ex.id,
+            baseTitle: ex.title,
+            reason: ex.smartReason,
+            allLevels: ex.levels,
+            currentLevelIdx: levelIdx,
+            duration: duration
+        };
+    });
+
+    setGeneratedRoutine(finalRoutine);
+    addLog(`V101 Logic: Generated ${finalRoutine.length} Unique Vectors`);
+};
     // --- PRESET LOADER ---
     const loadPreset = (presetName) => {
         const exerciseIds = PRESET_PROTOCOLS[presetName];
@@ -5222,4 +5408,3 @@ document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove(
 </script>
 </body>
 </html>
-
