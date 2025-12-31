@@ -409,6 +409,16 @@
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
+const calculateAngle = (p1, p2, p3) => {
+  if (!p1 || !p2 || !p3) return 0;
+  const v1 = [p1.x - p2.x, p1.y - p2.y];
+  const v2 = [p3.x - p2.x, p3.y - p2.y];
+  const dot = v1[0] * v2[0] + v1[1] * v2[1];
+  const mag1 = Math.sqrt(v1[0]**2 + v1[1]**2);
+  const mag2 = Math.sqrt(v2[0]**2 + v2[1]**2);
+  return Math.acos(dot / (mag1 * mag2)) * (180 / Math.PI);
+};
+
 
 const SFX = {
     play: (freq, type, dur) => {
@@ -2564,8 +2574,18 @@ ctx.beginPath(); ctx.arc(hRx, hRy, 5 * s, 0, 2 * Math.PI); ctx.fillStyle = '#22d
 
 
 const getGrade = (score) => {
-    if (typeof score !== 'number' || isNaN(score)) return 'C';
-    if (score >= 90) return 'A'; if (score >= 80) return 'B'; if (score >= 70) return 'C'; if (score >= 60) return 'D'; return 'F';
+  if (typeof score !== 'number' || isNaN(score)) return 'C';
+  if (score >= 95) return 'A+';
+  if (score >= 90) return 'A';
+  if (score >= 85) return 'A-';
+  if (score >= 80) return 'B+';
+  if (score >= 75) return 'B';
+  if (score >= 70) return 'B-';
+  if (score >= 65) return 'C+';
+  if (score >= 60) return 'C';
+  if (score >= 55) return 'C-';
+  if (score >= 50) return 'D';
+  return 'F';
 };
 
 // --- NEW: Progress Streak Component (Retention Booster) ---
@@ -4060,23 +4080,13 @@ const calculateTorsion = (p1, p2) => {
 
 
         // ELITE BIOMECHANICAL ENGINE V2 (Z-Depth Compensated)
-const rateMetric = (point1, point2, axis = 'y', sensitivity = 3000) => {
-    if (!point1 || !point2) return 100;
-
-    // 1. Raw 2D Differential (What the camera sees)
-    const visualDelta = Math.abs(point1[axis] - point2[axis]);
-
-    // 2. The Z-Depth Delta (How far back one point is vs the other)
-    // We use a 0.5 multiplier to normalize standard webcam FOV distortion
-    const zDelta = Math.abs((point1.z || 0) - (point2.z || 0)) * 0.5;
-
-    // 3. Angular Compensation (The "Truth")
-    // If zDelta is high, visualDelta is exaggerated by perspective. We subtract the noise.
-    const trueDeviation = Math.max(0, visualDelta - (zDelta * 0.8));
-
-    // 4. Score Calculation
-    const score = 100 - (trueDeviation * sensitivity);
-    return Math.max(40, Math.min(100, Math.floor(score)));
+const rateMetric = (point1, point2, axis = 'y', sensitivity = 5000) => {
+  if (!point1 || !point2) return 50;  // Lower default
+  const visualDelta = Math.abs(point1[axis] - point2[axis]);
+  const zDelta = Math.abs((point1.z || 0) - (point2.z || 0)) * 0.5;
+  const trueDeviation = Math.max(0, visualDelta - (zDelta * 0.8));
+  const score = 100 - (trueDeviation * sensitivity);
+  return Math.max(30, Math.min(100, Math.floor(score)));  // Min 30 for F variance
 };
 
         try {
@@ -4098,6 +4108,33 @@ const rateMetric = (point1, point2, axis = 'y', sensitivity = 3000) => {
                     score: lm.visibility || 1.0,
                     name: i
                 }));
+
+const p = keypoints;
+
+
+// NEW: Knee Valgus (Front: Knees inward)
+if (view === 'front' && valid(p[24]) && valid(p[26]) && valid(p[28])) {
+  const kneeAngle = calculateAngle(p[24], p[26], p[28]);
+  const ideal = 180;
+  const dev = Math.abs(ideal - kneeAngle);
+  rawScores.gait.push(100 - dev * 3);
+  if (dev > 10) detectedIssues.add("Knee Valgus");
+}
+
+// NEW: Spinal Curve (Side: Ear-shoulder-hip angle for kyphosis/lordosis)
+if (view === 'side' && valid(p[8]) && valid(p[12]) && valid(p[24])) {
+  const spineAngle = calculateAngle(p[8], p[12], p[24]);
+  const ideal = 180;
+  const dev = Math.abs(ideal - spineAngle);
+  rawScores.spine.push(100 - dev * 2.5);
+  if (dev > 20) detectedIssues.add("Kyphosis/Lordosis");
+}
+
+// NEW: Ankle Pronation (Front: Ankle vs knee/hip alignment)
+if (view === 'front' && valid(p[26]) && valid(p[28])) {
+  const pronation = Math.abs(p[26].x - p[28].x) * 5000;
+  rawScores.gait.push(100 - pronation);
+}
 
                 drawSkeleton(keypoints, view);
 
@@ -4192,7 +4229,19 @@ const rateMetric = (point1, point2, axis = 'y', sensitivity = 3000) => {
                 }
 
               // --- FRONT VIEW: ELITE 3D ANALYSIS (V2) ---
-const p = (idx) => keypoints[idx]; 
+
+if (view === 'side') {
+  const ear = p[7]; // Left ear
+  const shoulder = p[11]; // Left shoulder
+  const hip = p[23]; // Left hip
+  const neckAngle = calculateAngle(ear, shoulder, hip);
+  rawScores.head.push(100 - neckAngle * 2); // Penalty for >45°
+}
+if (view === 'front') {
+  const leftShoulder = p[11], rightShoulder = p[12];
+  const asymmetry = Math.abs(leftShoulder.y - rightShoulder.y) * 1000;
+  rawScores.shoulders.push(100 - asymmetry);
+}
 if (view === 'front') {
     // Use 3D Landmarks for Z-depth access
     const lSh = landmarks3D[11], rSh = landmarks3D[12];
