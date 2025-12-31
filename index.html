@@ -4105,6 +4105,7 @@ const rateMetric = (point1, point2, axis = 'y', sensitivity = 5000) => {
                 const keypoints = result.landmarks[0].map((lm, i) => ({
                     x: lm.x,
                     y: lm.y,
+		    z: lm.z,
                     score: lm.visibility || 1.0,
                     name: i
                 }));
@@ -4281,7 +4282,7 @@ if (view === 'front') {
 
                 // --- SIDE VIEW: AXIAL ALIGNMENT ---
                 if (view === 'side') {
-                    const ear = p(8), shoulder = p(12), hip = p(24), ankle = p(28);
+                    const ear = p[8], shoulder = p[12], hip = p[24], ankle = p[28];
                     const torsoH = valid(shoulder) && valid(hip) ? Math.abs(hip.y - shoulder.y) : 0.5;
 
                     // 1. PLUMB LINE ACCURACY (Head over Shoulder)
