@@ -642,7 +642,7 @@ const EXERCISE_DB = [
     {
         id: "head_loading", title: "Cervical Alignment", target_grade: "head", pattern: "posture_reset", tissues: "Deep Spine / Multifidus", phase: 1, synergies: ["Neck Pain", "Back Pain"], equipment: "none", levels: [
             { level: 1, name: "Weighted Head Loading (Standing)", demoType: "head_loading_basic", duration: 90, desc: "Axial decompression standing tall with light weight on head.", steps: ["Balance light weight on head", "Reach arms up", "Breathe deep", "Lengthen spine"], videoSearch: "medicine ball balanced on head posture" },
-            { level: 2, name: "Head-Loaded Standing Hip Hinge", demoType: "head_hinge", duration: 90, desc: "Basic axial loading with hip hinge to teach posterior chain under head load.", steps: ["Balance 5-10lb on head", "Hands on hips", "Hinge at hips, push butt back", "Keep spine neutral", "Return to stand"], videoSearch: "good morning exercise with medicine ball overhead" },
+            { level: 2, name: "Head-Loaded Standing Hip Hinge", demoType: "head_hinge", duration: 90, desc: "Basic axial loading with hip hinge to teach posterior chain under head load.", steps: ["Balance 5-10lb on head", "Hinge at hips, push butt back", "Keep spine neutral", "Return to stand"], videoSearch: "good morning exercise with medicine ball overhead" },
             { level: 3, name: "Head Loaded March", demoType: "head_march", duration: 60, desc: "Dynamic stability marching under axial load.", steps: ["Balance weight on head", "March slowly in place", "No wobble", "Maintain tall posture"], videoSearch: "posture head weighting marching" }
         ]
     },
@@ -1910,38 +1910,77 @@ ctx.beginPath(); ctx.arc(hRx, hRy, 5 * s, 0, 2 * Math.PI); ctx.fillStyle = '#22d
                     ctx.font = `bold ${10 * s}px sans-serif`;
                     ctx.fillText("STILLNESS UNDER LOAD = TRUE STRENGTH", 20, h - 30);
                 }
-                else if (type === 'head_hinge') {  // Improved Hip Hinge - more realistic posterior shift
-                    const phase = easeInOutCubic((Math.sin(t * 1.8) + 1) / 2);  // Slower, smoother hinge
-                    const hingeAngle = phase * 50 * (Math.PI / 180);  // Up to ~50° for deeper hinge
-                    const hipShiftBack = phase * 30 * s;  // Butt pushes back for realism
-
-                    // Hips move back as we hinge
-                    const hipX = cx + hipShiftBack;
-                    const headX = hipX + Math.sin(hingeAngle) * 60 * s;
-                    const headY = cy - 40 * s - Math.cos(hingeAngle) * 60 * s;  // Head drops slightly but stays loaded
-
-                    drawEquipment('ball', headX, headY - 28 * s, 0);
-
-                    // Torso (spine) hinged from hips
-                    ctx.save();
-                    ctx.translate(hipX, cy);
-                    ctx.rotate(hingeAngle);
-                    drawSegment(0, -60 * s, 0, 20 * s, 18 * s, '#475569');  // Thicker neutral spine
-                    ctx.restore();
-
-                    // Legs straight, slight knee soften on hinge
-                    const kneeSoft = phase * 5 * s;
-                    drawSegment(hipX - 20 * s, cy, hipX - 20 * s, cy + 100 * s + kneeSoft, 16 * s, '#22d3ee');
-                    drawSegment(hipX + 20 * s, cy, hipX + 20 * s, cy + 100 * s + kneeSoft, 16 * s, '#22d3ee');
-
-                    // Arms hanging naturally or on hips
-                    drawSegment(hipX - 25 * s, cy + 10 * s, hipX - 45 * s + phase * 10 * s, cy + 40 * s, 8 * s, '#cbd5e1');
-                    drawSegment(hipX + 25 * s, cy + 10 * s, hipX + 45 * s - phase * 10 * s, cy + 40 * s, 8 * s, '#cbd5e1');
-
-                    ctx.beginPath(); ctx.arc(headX, headY, 20 * s, 0, 2 * Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill();
-                    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText("HEAD-LOADED HIP HINGE", 20, 30);
-                    drawForce(hipX, cy + 60 * s, 1, 0, "PUSH BUTT BACK");  // Better cue
-                }
+                else if (type === 'head_hinge') {  // Realistic Head-Loaded Hip Hinge with Hands Holding Ball
+    const phase = easeInOutCubic((Math.sin(t * 1.8) + 1) / 2);  // Slower, smoother hinge
+    const hingeAngle = phase * 50 * (Math.PI / 180);  // Up to ~50° for deeper hinge
+    const hipShiftBack = -phase * 30 * s;  // Butt pushes back for realism (negative to shift opposite to lean)
+    const hipX = cx + hipShiftBack;
+    const thighLength = 50 * s;
+    const shinLength = 50 * s;
+    const kneeY = cy + shinLength;
+    const footY = kneeY + shinLength;
+    const deltaX = hipShiftBack;
+    const thighEffectiveLength = Math.sqrt(thighLength ** 2 - deltaX ** 2);
+    const hipY = kneeY - thighEffectiveLength;
+    // Torso (spine) hinged from hips
+    ctx.save();
+    ctx.translate(hipX, hipY);
+    ctx.rotate(hingeAngle);
+    drawSegment(0, -60 * s, 0, 20 * s, 18 * s, '#475569');  // Thicker neutral spine
+    ctx.restore();
+    // Calculate shoulder position (top of torso)
+    const shoulderX = hipX + Math.sin(hingeAngle) * 60 * s;
+    const shoulderY = hipY - 60 * s * Math.cos(hingeAngle);
+    // Head position (consistent with shoulder, no extra offset)
+    const headX = shoulderX;
+    const headY = shoulderY - 60 * s;  // Adjusted for better proportion
+    // Draw head
+    ctx.beginPath(); ctx.arc(headX, headY, 20 * s, 0, 2 * Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill();
+    // Draw ball on head
+    drawEquipment('ball', headX, headY - 28 * s, 0);
+    // Legs with knees: shins vertical, thighs angled
+    const leftFootX = cx - 20 * s;
+    const rightFootX = cx + 20 * s;
+    const leftKneeX = leftFootX;
+    const rightKneeX = rightFootX;
+    const leftHipX = hipX - 20 * s;
+    const rightHipX = hipX + 20 * s;
+    // Left leg (thigh and shin)
+    drawSegment(leftHipX, hipY, leftKneeX, kneeY, 16 * s, '#22d3ee');  // Thigh
+    drawSegment(leftKneeX, kneeY, leftFootX, footY, 16 * s, '#22d3ee');  // Shin
+    // Right leg (thigh and shin)
+    drawSegment(rightHipX, hipY, rightKneeX, kneeY, 16 * s, '#22d3ee');  // Thigh
+    drawSegment(rightKneeX, kneeY, rightFootX, footY, 16 * s, '#22d3ee');  // Shin
+    // NEW: Both hands holding the ball - realistic bent arms
+    // Left arm (visible in side view as "front" arm)
+    const leftHandX = headX - 10 * s;
+    const leftHandY = headY - 20 * s;
+    const leftElbowX = shoulderX - 20 * s;  // Flare out left
+    const leftElbowY = (shoulderY + leftHandY) / 2 + 10 * s;  // Slight down curve
+    drawSegment(shoulderX, shoulderY, leftElbowX, leftElbowY, 8 * s, '#cbd5e1');
+    drawSegment(leftElbowX, leftElbowY, leftHandX, leftHandY, 8 * s, '#cbd5e1');
+    // Right arm (behind in side view, slightly offset for visibility)
+    const rightHandX = headX + 10 * s;
+    const rightHandY = headY - 20 * s;
+    const rightElbowX = shoulderX + 20 * s;  // Flare out right
+    const rightElbowY = (shoulderY + rightHandY) / 2 + 10 * s;
+    drawSegment(shoulderX, shoulderY, rightElbowX, rightElbowY, 8 * s, '#cbd5e1');
+    drawSegment(rightElbowX, rightElbowY, rightHandX, rightHandY, 8 * s, '#cbd5e1');
+    // NEW: Neck glow during deep hinge (like VMO in split_squat)
+    if (phase > 0.6) {
+        drawMuscle(shoulderX, shoulderY - 10 * s, headX, headY + 10 * s, 14 * s, true, "AXIAL LOAD", 'right');
+    }
+    // NEW: Glutes/Hams glow for lower body engagement
+    if (phase > 0.6) {
+        drawMuscle(hipX, hipY - 10 * s, hipX, hipY + 20 * s, 20 * s, true, "GLUTES/HAMS", 'left');
+    }
+    // Captions and Cues
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText("HEAD-LOADED HIP HINGE", 20, 30);
+    drawForce(hipX, hipY + 60 * s, -1, 0, "PUSH BUTT BACK");  // Adjusted direction for realism
+    if (phase > 0.5) {
+        ctx.fillStyle = '#f59e0b'; ctx.font = 'bold 11px sans-serif'; ctx.fillText("HANDS HOLD BALL", 20, h - 30);
+    }
+}
                 else if (type === 'head_split') {
                     const phase = easeInOutCubic((Math.sin(t * 2) + 1) / 2);
                     const depth = phase * 30 * s;
@@ -4463,11 +4502,11 @@ tickets += painBoost;
         else if (ex.phase > userPhase) tickets = 0; // Hard lock on future content
 
 // In lotteryPool map, after C:
-if (currentTheme === 'power' && ex.pattern.includes('power')) {
+if (currentTheme === 'power' && (ex.pattern ?.includes('power') || false)) {
     tickets += 200;
-} else if (currentTheme === 'recovery' && ex.pattern.includes('release')) {
+} else if (currentTheme === 'recovery' && (ex.pattern ?.includes('release') || false)) {
     tickets += 200;
-} else if (currentTheme === 'mobility' && ex.pattern.includes('flow')) {
+} else if (currentTheme === 'mobility' && (ex.pattern ?.includes('flow') || false)) {
     tickets += 200;
 }
 
