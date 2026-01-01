@@ -5449,7 +5449,7 @@ const startLiveMode = async () => {
     }
 
     addLog("Synchronizing Biometric Data...");
-    await new Promise(r => setTimeout(r, 2000)); // Dramatic pause
+    await new Promise(r => setTimeout(r, 4500)); // Dramatic pause
 
     setAudit(newAudit);
     setHistory([newAudit, ...history]);
@@ -6441,7 +6441,7 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
                             </div>
                         </div>
                         <div className="w-full bg-slate-800 h-4 rounded-full overflow-hidden mb-4">
-                            <div className={`h-full transition-all duration-1500 ease-out ${m.data.grade === 'A' ? 'bg-emerald-500' : m.data.grade === 'B' ? 'bg-blue-500' : m.data.grade === 'C' ? 'bg-yellow-500' : m.data.grade === 'D' ? 'bg-orange-500' : 'bg-red-500'}`} 
+                            <div className={`h-full transition-all duration-6000 ease-out ${m.data.grade === 'A' ? 'bg-emerald-500' : m.data.grade === 'B' ? 'bg-blue-500' : m.data.grade === 'C' ? 'bg-yellow-500' : m.data.grade === 'D' ? 'bg-orange-500' : 'bg-red-500'}`} 
                                  style={{ width: `${m.data.val}%` }} />
                         </div>
                         <div className="flex justify-between items-center">
@@ -6569,3 +6569,4 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
 </script>
 </body>
 </html>
+
