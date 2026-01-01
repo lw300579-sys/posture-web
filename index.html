@@ -3661,6 +3661,7 @@ const CameraCapture = ({ onCapture, onClose }) => {
 const App = () => {
 
     const viewportRef = useRef(null);
+    const rightPanelRef = useRef(null);
 
     const [uploads, setUploads] = useState({ front: null, side: null, back: null });
     const [liveScore, setLiveScore] = useState(null);
@@ -3685,6 +3686,17 @@ useEffect(() => {
             viewportRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         }
     }, [tab]);
+
+// ... inside App component ...
+
+    // FORCE RIGHT PANEL TO TOP ON CHANGE
+    useEffect(() => {
+        if (rightPanelRef.current) {
+            rightPanelRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [tab, postAnalysisMode, audit]); 
+
+    // ... rest of effects
 
     const [showReader, setShowReader] = useState(null);
     const [rightPanelTab, setRightPanelTab] = useState('twin');
@@ -5321,27 +5333,6 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
     </div>
 </div>
 
-        
-                        <div className="mb-4 flex justify-center gap-4 no-print">
-                            <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={useEquipment}
-                                    onChange={(e) => setUseEquipment(e.target.checked)}
-                                    className="w-6 h-6 rounded text-cyan-500 focus:ring-cyan-500"
-                                />
-                                <span className="text-sm font-bold text-slate-300">Use Equipment</span>
-                            </label>
-                            <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={!userPrefs.lowImpact}
-                                    onChange={(e) => setUserPrefs(p => ({ ...p, lowImpact: !e.target.checked }))}
-                                    className="w-6 h-6 rounded text-orange-500 focus:ring-orange-500"
-                                />
-                                <span className="text-sm font-bold text-slate-300">High Intensity Mode</span>
-                            </label>
-                        </div>
 
 
                         {/* THIS MAKES THE 3 BOXES BIG AND NOT CUT OFF */}
@@ -5628,7 +5619,7 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
             <div className={`glass-panel flex flex-col ${postAnalysisMode ? 'expanded' : ''}`}>
                 {/* Removed 'shrink-0' because we aren't flexing anymore */}
 
-                <div className="p-6 border-b border-slate-800 bg-slate-900/50 flex-1 overflow-y-auto">
+                <div ref={rightPanelRef} className="p-6 border-b border-slate-800 bg-slate-900/50 flex-1 overflow-y-auto">
 
 {/* OPTIMIZED HEADER: Perfect spacing, slightly smaller buttons & numbers */}
 <div className="relative mb-10 pt-4"> {/* Reduced bottom margin, added top padding */}
@@ -5739,17 +5730,40 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
             </div>
         )}
 
-{/* EQUIPMENT TOGGLE */}
-        <div className="mt-12 w-full">
-            <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
-                <button onClick={() => setUseEquipment(false)} className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${!useEquipment ? 'bg-cyan-600 text-white shadow-inner' : 'text-slate-400 hover:text-slate-200'}`}>
-                    BODYWEIGHT ONLY
-                </button>
-                <button onClick={() => setUseEquipment(true)} className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${useEquipment ? 'bg-cyan-600 text-white shadow-inner' : 'text-slate-400 hover:text-slate-200'}`}>
-                    ALL EQUIPMENT
-                </button>
-            </div>
-        </div>
+{/* SESSION CONFIGURATOR */}
+<div className="mt-12 w-full space-y-3">
+    {/* Row 1: Equipment */}
+    <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
+        <button 
+            onClick={() => setUseEquipment(false)} 
+            className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-lg transition-all ${!useEquipment ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+            BODYWEIGHT
+        </button>
+        <button 
+            onClick={() => setUseEquipment(true)} 
+            className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-lg transition-all ${useEquipment ? 'bg-cyan-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+            + EQUIPMENT
+        </button>
+    </div>
+
+    {/* Row 2: Intensity */}
+    <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-700">
+        <button 
+            onClick={() => setUserPrefs(p => ({ ...p, lowImpact: true }))} 
+            className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-lg transition-all ${userPrefs.lowImpact ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+            LOW IMPACT
+        </button>
+        <button 
+            onClick={() => setUserPrefs(p => ({ ...p, lowImpact: false }))} 
+            className={`flex-1 py-3 text-xs md:text-sm font-bold rounded-lg transition-all ${!userPrefs.lowImpact ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+            HIGH INTENSITY
+        </button>
+    </div>
+</div>
 
 <TrendGraph history={history} />
 
