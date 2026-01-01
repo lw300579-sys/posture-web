@@ -331,7 +331,17 @@
 }
 @media (max-width: 768px) {
     .workspace { grid-template-columns: 1fr; }
-    .glass-panel { display: none; } /* optional: hide panel on mobile */
+    /* DEFAULT HIDDEN, BUT VISIBLE WHEN EXPANDED (Analyzing/Results) */
+    .glass-panel { display: none; } 
+    .glass-panel.expanded { 
+        display: flex !important; 
+        position: fixed; 
+        inset: 0; 
+        width: 100%; 
+        height: 100%; 
+        z-index: 100;
+        background: #020617; /* Solid background for mobile legibility */
+    }
     .upload-grid { grid-template-columns: 1fr; }
 }
 @keyframes pulse-slow {
@@ -992,73 +1002,140 @@ const ExerciseGifOverlay = ({ demoType }) => {
     );
 };
 
-const AICoach = ({ audit, symptoms, chatHistory, onSend }) => {
+const AICoach = ({ audit, symptoms, chatHistory, onSend, onAction }) => {
     const [input, setInput] = useState("");
+    const [isThinking, setIsThinking] = useState(false); // NEW: Visual Thought Process
     const messagesEndRef = useRef(null);
 
+    // Auto-scroll to bottom
     useEffect(() => { 
-
-    if (chatHistory.length > 0) {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-}, [chatHistory]);
+    }, [chatHistory, isThinking]);
 
-    const handleSend = (txt) => {
+    const handleSend = async (txt) => {
         const msg = txt || input;
         if (!msg.trim()) return;
-        onSend(msg);
+        
+        // Trigger UI updates
         setInput("");
+        setIsThinking(true); // Start "Thinking" animation
+        
+        // Process
+        await onSend(msg);
+        
+        setIsThinking(false); // Stop animation
     };
 
     const suggestions = [
-        "Explain my Grade",
-        "Why headloading?",
-        "What is VMO?",
-        "Fix Forward Head",
-        "Optimize Routine"
+        "Analysis Report",
+        "Fix my Neck Pain",
+        "Why Head Loading?",
+        "Generate Power Routine",
+        "Show Anatomy Class"
     ];
 
     return (
-        <div className="flex flex-col h-full bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
-            <div className="p-4 bg-slate-900 border-b border-slate-800 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">Pocket Coach</span>
+        <div className="flex flex-col h-full bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-700 overflow-hidden shadow-2xl relative">
+            
+            {/* Header with "Live" Status */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center shadow-md z-10">
+                <div className="flex items-center gap-3">
+                    <div className="relative">
+                        <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping absolute inset-0 opacity-75"></div>
+                        <div className="w-3 h-3 rounded-full bg-emerald-500 relative z-10 border-2 border-slate-900"></div>
+                    </div>
+                    <div>
+                        <div className="text-xs font-black text-white uppercase tracking-widest leading-none">Pocket Coach</div>
+                        <div className="text-[9px] text-cyan-400 font-mono mt-0.5">NEURAL LINK: ACTIVE</div>
+                    </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
+
+            {/* Chat Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
                 {chatHistory.length === 0 ? (
-                    <div className="text-center text-slate-500 text-xs mt-10">
-                        <p className="mb-2">Analysis Complete.</p>
-                        <p>Ask me about your <span className="text-cyan-400">Hip Shift</span> or <span className="text-cyan-400">Protocol</span>.</p>
+                    <div className="h-full flex flex-col items-center justify-center opacity-60">
+                        <Icons.Scan className="w-12 h-12 text-slate-600 mb-4" />
+                        <p className="text-sm text-slate-400 font-medium text-center">
+                            Neural Core Ready.<br/>Awaiting Input.
+                        </p>
                     </div>
                 ) : (
                     chatHistory.map((msg, i) => (
-                        <div key={i} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                            <div className={`chat-bubble ${msg.sender === 'user' ? 'chat-user' : 'chat-ai'}`}>
-                                {msg.text}
+                        <div key={i} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-popIn`}>
+                            
+                            {/* Message Bubble */}
+                            <div className={`
+                                relative max-w-[85%] px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm
+                                ${msg.sender === 'user' 
+                                    ? 'bg-gradient-to-br from-cyan-600 to-blue-700 text-white rounded-tr-sm' 
+                                    : 'bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-sm shadow-inner'
+                                }
+                            `}>
+                                {/* Markdown-like bolding support */}
+                                <div dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-cyan-300 font-black">$1</strong>').replace(/\n/g, '<br/>') }} />
+                                
+                                {/* 🚀 NEW: ACTION BUTTONS IN CHAT */}
+                                {msg.action && (
+                                    <button 
+                                        onClick={() => onAction(msg.action)}
+                                        className="mt-3 w-full py-2 bg-slate-950 hover:bg-black border border-cyan-500/30 hover:border-cyan-400 rounded-lg flex items-center justify-center gap-2 text-xs font-bold text-cyan-400 transition-all group"
+                                    >
+                                        <span>{msg.action.label}</span>
+                                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                                    </button>
+                                )}
                             </div>
-                            <span className="text-[9px] text-slate-600 mb-2">{msg.sender === 'user' ? 'You' : 'Coach'}</span>
+
+                            {/* Timestamp / Label */}
+                            <span className="text-[9px] text-slate-600 mt-1 px-1 font-mono uppercase">
+                                {msg.sender === 'user' ? 'You' : 'Biometric AI'}
+                            </span>
                         </div>
                     ))
                 )}
+                
+                {/* Thinking Indicator */}
+                {isThinking && (
+                    <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 rounded-2xl rounded-tl-sm w-fit animate-pulse">
+                        <div className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    </div>
+                )}
                 <div ref={messagesEndRef} />
             </div>
-            {/* Quick Suggestions */}
-            <div className="px-3 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+
+            {/* Quick Chips */}
+            <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar mask-linear-fade">
                 {suggestions.map(s => (
-                    <button key={s} onClick={() => handleSend(s)} className="whitespace-nowrap px-3 py-1 bg-slate-800 border border-slate-700 rounded-full text-[10px] text-cyan-400 hover:bg-slate-700 hover:border-cyan-500/50 transition-all">{s}</button>
+                    <button key={s} onClick={() => handleSend(s)} className="whitespace-nowrap px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/50 rounded-full text-[10px] font-bold text-slate-400 hover:text-cyan-300 transition-all shadow-lg flex-shrink-0">
+                        {s}
+                    </button>
                 ))}
             </div>
-            <div className="p-3 bg-slate-900 border-t border-slate-800 flex gap-2">
+
+            {/* Input Area */}
+            <div className="p-3 bg-slate-950 border-t border-slate-800 flex gap-2">
                 <input
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder="Ask about your biomechanics..."
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    onKeyDown={(e) => { 
+    if (e.key === 'Enter') { 
+        e.preventDefault(); 
+        handleSend(); 
+    } 
+}}
+                    placeholder="Ask about pain, mechanics, or nutrition..."
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder:text-slate-600"
                 />
-                <button onClick={() => handleSend()} className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg"><Icons.Send /></button>
+                <button 
+                    onClick={() => handleSend()} 
+                    disabled={!input.trim() || isThinking}
+                    className="p-3 bg-gradient-to-br from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                    <Icons.Send />
+                </button>
             </div>
         </div>
     );
@@ -3048,10 +3125,27 @@ const ProgramPlayer = ({ program, onClose, onFeedback }) => {
                         <button onClick={() => setPlaying(p => !p)} className="text-white hover:text-cyan-400">
                             {playing ? <Icons.Pause /> : <Icons.Play />}
                         </button>
-                        <div className="flex gap-2">
-                            <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} className="btn-secondary">PREV</button>
-                            <button onClick={() => setStep(Math.min(program.length - 1, step + 1))} disabled={step === program.length - 1} className="btn-primary">NEXT</button>
-                        </div>
+                        <div className="flex-1 flex items-center justify-center gap-8">
+    <button 
+        onClick={() => setStep(Math.max(0, step - 1))}
+        disabled={step === 0}
+        className="px-8 py-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-xl font-black text-xl uppercase tracking-wider text-white transition-all shadow-lg"
+    >
+        ← PREV
+    </button>
+
+    <div className="text-4xl font-black text-cyan-400">
+        {step + 1} / {program.length}
+    </div>
+
+    <button 
+        onClick={() => setStep(Math.min(program.length - 1, step + 1))}
+        disabled={step === program.length - 1}
+        className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 rounded-xl font-black text-xl uppercase tracking-wider text-white transition-all shadow-lg shadow-cyan-900/50"
+    >
+        NEXT →
+    </button>
+</div>
                     </div>
                 </div>
 
@@ -3059,13 +3153,15 @@ const ProgramPlayer = ({ program, onClose, onFeedback }) => {
                 <div className="w-full md:w-1/3 bg-slate-950 flex flex-col p-6 overflow-y-auto">
                     <div className="flex justify-between items-center mb-6"><h2 className="text-lg font-bold text-white flex gap-2"><Icons.List /> Protocol V84.0</h2><button onClick={onClose} className="text-slate-400 hover:text-white"><Icons.Close /></button></div>
                     <div>
-                        <div className="flex justify-between items-start mb-1">
-                            <h3 className="text-xl font-black text-white mb-2">
-    {currentExercise.baseTitle || "Head-Loading"}
-</h3>
-<p className="text-sm text-cyan-400 mb-4">
-    Step {step + 1} of {program.length}
-</p>
+                        <div className="mb-6">
+    <h3 className="text-2xl font-black text-white mb-3 text-center">
+        {currentExercise.baseTitle || currentExercise.name}
+    </h3>
+    {program.length > 1 && (
+        <p className="text-center text-lg text-cyan-400 font-bold">
+            Step {step + 1} of {program.length}
+        </p>
+    )}
                             <p className="text-sm text-cyan-400 mb-4">
                                 {currentExercise.baseTitle && `Step ${step + 1} of ${program.length}`}
                             </p>                            </div>
@@ -3113,14 +3209,19 @@ const ProgramPlayer = ({ program, onClose, onFeedback }) => {
     );
 };
 const TrendGraph = ({ history }) => {
-    if (history.length < 2) return <div className="mb-6 p-4 bg-slate-900/30 rounded text-center text-xs text-slate-500">Scan again to see trend</div>;
+    if (history.length < 2) {
+        return (
+            <div className="mb-6 p-4 bg-slate-900/30 rounded text-center text-xs text-slate-500">
+                Scan again to see trend
+            </div>
+        );
+    }
 
     // FIX 1: Limit to strictly the last 20 items to prevent overcrowding
     const recentHistory = history.slice(0, 20).reverse(); // Reverse so oldest is left, newest is right
     const scores = recentHistory.map(h => h.score);
 
     const h = 50, w = 280;
-    // FIX 2: Ensure X coordinates are distributed evenly across the width (0 to w)
     const points = scores.map((s, i) => {
         const x = (i / (scores.length - 1)) * w;
         const y = h - (s / 100) * h;
@@ -3129,18 +3230,25 @@ const TrendGraph = ({ history }) => {
 
     return (
         <div className="mb-6">
-            <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">Recovery Trend (Last {scores.length})</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">
+                Recovery Trend (Last {scores.length})
+            </div>
             <div className="h-[50px] w-full bg-slate-900/30 rounded relative overflow-hidden">
                 <svg className="w-full h-full" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
-                    {/* The line connecting the dots */}
                     <polyline points={points} fill="none" stroke="#22d3ee" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                    {/* The dots themselves */}
                     {scores.map((s, i) => (
-                        <circle key={i} cx={(i / (scores.length - 1)) * w} cy={h - (s / 100) * h} r="3" fill="#0f172a" stroke="#22d3ee" strokeWidth="2" />
+                        <circle 
+                            key={i} 
+                            cx={(i / (scores.length - 1)) * w} 
+                            cy={h - (s / 100) * h} 
+                            r="3" 
+                            fill="#0f172a" 
+                            stroke="#22d3ee" 
+                            strokeWidth="2" 
+                        />
                     ))}
                 </svg>
             </div>
-            {/* Recent Scans list code remains here... */}
         </div>
     );
 };
@@ -3580,10 +3688,16 @@ useEffect(() => {
 
     const [showReader, setShowReader] = useState(null);
     const [rightPanelTab, setRightPanelTab] = useState('twin');
-    const [chatHistory, setChatHistory] = useState([]);
     const [activeProgram, setActiveProgram] = useState(null);
     const [generatedRoutine, setGeneratedRoutine] = useState(null); // The waiting area
     const [showClinical, setShowClinical] = useState(false);
+    const [chatHistory, setChatHistory] = useState(() => {
+    try {
+        const saved = localStorage.getItem('bio_chat_memory');
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+});
+
 
     // --- INIT ---
     useEffect(() => {
@@ -3992,97 +4106,234 @@ useEffect(() => {
     };
 
     // --- ULTIMATE OFFLINE BIO-COACH (MAX SOPHISTICATION, NO GEMINI) ---
-    const handleChat = async (input) => {
-        setChatHistory(prev => [...prev, { sender: 'user', text: input }]);
+const handleChat = async (input) => {
+    // =========================================================================
+    // 🧠 LAYER 1: COGNITIVE PRE-PROCESSING & STATE AWARENESS
+    // =========================================================================
+    
+    setChatHistory(prev => [...prev, { sender: 'user', text: input }]);
+    
+    // Artificial "Cognitive Load" delay for realism
+    await new Promise(r => setTimeout(r, 800 + Math.random() * 400)); 
 
-        await new Promise(r => setTimeout(r, 900)); // Feels thoughtful
-
-        const lower = input.toLowerCase();
-
-        // Find worst + second worst areas
-        let worst = { part: "balanced", score: 100, key: "" };
-        let second = { part: "great", score: 100, key: "" };
-        if (audit) {
-            const map = {
-                head: { name: "head/neck (forward head posture)", tips: "Head Loading, Chest Openers, Trap Release" },
-                shoulders: { name: "shoulders (rounded/kyphotic)", tips: "Standing Pulls, Chest Openers, Arm Raises" },
-                spine: { name: "spine/back (compression or stiffness)", tips: "Spinal Waves, Body Wave, Diaphragm Breath" },
-                hip: { name: "hips/pelvis (tilt or shift)", tips: "Split Squats, Coiling, Body Bounce" },
-                gait: { name: "feet/legs/gait (weak recoil)", tips: "Plantar Release, Towel Curls, Hyperarch Hops" }
-            };
-            for (let key in map) {
-                const val = audit[key]?.val || 100;
-                if (val < worst.score) {
-                    second = worst;
-                    worst = { part: map[key].name, score: val, key, tips: map[key].tips };
-                } else if (val < second.score) {
-                    second = { part: map[key].name, score: val, key, tips: map[key].tips };
+    // 1.1 Fuzzy Match Utility
+    const fuzzyMatch = (source, target) => {
+        const a = source.toLowerCase();
+        const b = target.toLowerCase();
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+        const matrix = [];
+        for (let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+        for (let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+        for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+                if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
                 }
             }
         }
-
-        let reply = "";
-
-        if (lower.includes("hi") || lower.includes("hello") || lower.includes("hey") || lower.includes("start")) {
-            reply = `Hey champion! Your current Bio-Integrity Score is ${audit?.score || "?"}%. We're building a resilient, elastic body using biotensegrity principles — your fascia is the key web holding everything together.\n\nRight now your biggest area is ${worst.part} at ${worst.score}%. Let's crush that first. What do you want to know or fix today?`;
-        }
-        else if (lower.includes("score") || lower.includes("grade") || lower.includes("result")) {
-            reply = `Here's your full fascial integrity breakdown (lower % = more restriction):\n\n` +
-                    `• Head/Neck: ${audit?.head?.grade || "?"} (${audit?.head?.val || "?"}%) — Forward head pulls on the entire fascial web.\n` +
-                    `• Shoulders: ${audit?.shoulders?.grade || "?"} (${audit?.shoulders?.val || "?"}%) — Rounded shoulders collapse the tensegrity structure.\n` +
-                    `• Spine/Back: ${audit?.spine?.grade || "?"} (${audit?.spine?.val || "?"}%) — Compression blocks elastic recoil.\n` +
-                    `• Hips/Pelvis: ${audit?.hip?.grade || "?"} (${audit?.hip?.val || "?"}%) — Tilt leaks power through the slings.\n` +
-                    `• Feet/Legs/Gait: ${audit?.gait?.grade || "?"} (${audit?.gait?.val || "?"}%) — Weak recoil means expensive movement.\n\n` +
-                    `Your primary limitation: ${worst.part}. Secondary: ${second.part}.\n\nYour protocol is laser-focused on this — do it daily and watch the scores climb!`;
-        }
-        else if (lower.includes("head") || lower.includes("neck") || lower.includes("tech")) {
-            reply = `Forward head posture ("tech neck") is a tensegrity disaster — your head floats forward, overloading the posterior fascial chain and compressing your spine. Every inch forward adds ~10lbs of leverage stress!\n\n` +
-                    `Root cause: Tight suboccipitals + weak deep cervical flexors from screens. This pulls on the entire web down to your feet.\n\n` +
-                    `Immediate fixes from your protocol:\n1. Head Loading (axial decompression — teaches floating compression)\n2. Chest Openers (releases anterior chain)\n3. Trap Release + Standing Pulls (wakes lower traps)\n\n` +
-                    `Do these daily. Breathe deep — fascia hydrates through movement! You'll feel taller in days.`;
-        }
-        else if (lower.includes("shoulder") || lower.includes("round")) {
-            reply = `Rounded shoulders collapse your biotensegrity structure — bones compress instead of floating in the fascial tensegrity web. This shortens the anterior chain (pecs) and weakens posterior slings.\n\n` +
-                    `Root cause: Sedentary life + forward head pulling everything down.\n\n` +
-                    `Best protocol moves:\n• Chest Openers + Arm Raises (lengthen front line)\n• Standing Pulls/Face Pulls (fire rhomboids/lower traps)\n• Body Wave (global extension)\n\n` +
-                    `Focus on "ears over shoulders" alignment. Your shoulders aren't earrings — drop and retract!`;
-        }
-        else if (lower.includes("back") || lower.includes("spine") || lower.includes("pain")) {
-            reply = `Back/spine issues come from lost tensegrity — your fascia gets glued, bones compress, and elastic recoil dies. You're a spring, not a stack of blocks!\n\n` +
-                    `Root cause: Thoracic stiffness + weak deep front line. Sitting turns your spine rigid.\n\n` +
-                    `Protocol heroes:\n• Spinal Waves + Body Wave (segmental motion hydrates discs)\n• Diaphragm Breath (360 expansion = internal brace)\n• Inversion Hang (decompression)\n\n` +
-                    `Move like water — undulate! This rebuilds the omni-directional web. Pain melts fast.`;
-        }
-        else if (lower.includes("hip") || lower.includes("pelvis") || lower.includes("tilt")) {
-            reply = `Hip/pelvic tilt destroys force transmission — your posterior/anterior oblique slings disconnect, leaking power and causing knee/back pain.\n\n` +
-                    `Root cause: Glute amnesia + tight hip flexors from sitting. The pelvis is your transmission!\n\n` +
-                    `Top fixes:\n• Deep Split Squats (VMO + hip flexor length)\n• Coiling Lunges (torsion loading)\n• Body Bounce + QL Straddle (lateral line)\n\n` +
-                    `Head over foot alignment is key — coil the spring! Your glutes will wake up.`;
-        }
-        else if (lower.includes("knee") || lower.includes("gait") || lower.includes("foot") || lower.includes("leg")) {
-            reply = `Weak gait/recoil means expensive movement — your Achilles/plantar fascia aren't storing elastic energy. You're muscling everything instead of springing!\n\n` +
-                    `Root cause: Dead feet from shoes + hip issues up the chain.\n\n` +
-                    `Protocol gold:\n• Plantar Release + Towel Curls (wake intrinsic foot)\n• Hyperarch/Pogo Hops (build stiffness)\n• Split Squats (connect foot to glute)\n\n` +
-                    `Your foot is the battery — recharge it barefoot! Bounce, don't thud.`;
-        }
-        else if (lower.includes("best") || lower.includes("first") || lower.includes("priority")) {
-            reply = `Priority #1: Your ${worst.part} at ${worst.score}% — this is the weakest link in your fascial web.\n\n` +
-                    `Fix the foundation first (biotensegrity rule). Start every session with the top exercises targeting this:\n${worst.tips}\n\n` +
-                    `Do them mindfully — feel the fascia glide. Consistency here unlocks everything else. You're...You're capable of elite structure!`;
-        }
-        else if (lower.includes("progress") || lower.includes("fast") || lower.includes("improve")) {
-            reply = `Fast progress formula:\n1. Scan daily (track the web healing)\n2. Full protocol 5x/week — quality over quantity\n3. Extra love for ${worst.part}\n4. Move more: Walk barefoot, bounce, breathe deep\n5. Hydrate fascia — rhythmic movement > static stretching\n\n` +
-                    `Most see 10-20% gains in 2-4 weeks. Your body is a self-healing tensegrity masterpiece — feed it movement!`;
-        }
-        else {
-            reply = `Solid question! Your body operates on biotensegrity — bones float in a continuous tension web of fascia. Restriction in one area pulls on everything.\n\n` +
-                    `Current priority: ${worst.part} (${worst.score}%). Your protocol attacks this exactly — trust the process.\n\n` +
-                    `Top moves today: ${worst.tips}\n\n` +
-                    `Breathe, feel the glide, stay elastic. You've got unbreakable potential — let's build it! What else? 💪`;
-        }
-
-        setChatHistory(prev => [...prev, { sender: 'ai', text: reply }]);
+        return 1 - (matrix[b.length][a.length] / Math.max(a.length, b.length));
     };
+
+    // 1.2 Context Engines
+    const getTimeContext = () => {
+        const h = new Date().getHours();
+        if (h < 11) return { phase: "Morning", focus: "Activation", icon: "🌅", advice: "Hydrate your fascia immediately." };
+        if (h < 17) return { phase: "Day", focus: "Postural Reset", icon: "☀️", advice: "Break the sitting cycle." };
+        return { phase: "Evening", focus: "Decompression", icon: "🌙", advice: "Switch to parasympathetic breathing." };
+    };
+
+    const detectSentiment = (str) => {
+        if (["pain", "hurt", "dying", "agony", "injury"].some(w => str.includes(w))) return "distress";
+        if (["ready", "let's go", "pumped", "start"].some(w => str.includes(w))) return "motivated";
+        return "neutral";
+    };
+
+    // =========================================================================
+    // 🧬 LAYER 2: KNOWLEDGE GRAPH & PREDICTIVE MODELING
+    // =========================================================================
+
+    const anatomyMatrix = {
+        "suboccipital": "head", "scm": "head", "jaw": "head", "tmj": "head", "migraine": "head", "neck": "head",
+        "pec": "shoulders", "rotator": "shoulders", "trap": "shoulders", "shoulder": "shoulders",
+        "lats": "spine", "erector": "spine", "disk": "spine", "sciatica": "spine", "back": "spine", "lumbar": "spine",
+        "psoas": "hip", "glute": "hip", "piriformis": "hip", "groin": "hip", "hip": "hip",
+        "plantar": "gait", "shin": "gait", "ankle": "gait", "foot": "gait", "knee": "gait", "bunions": "gait"
+    };
+
+    // Predictive Analysis (The "Scare" Factor)
+    const calculateRisk = (part, score) => {
+        if (score > 85) return { risk: "Low", prediction: "Sustainable longevity." };
+        if (score > 70) return { risk: "Moderate", prediction: "Performance leak detected." };
+        return { risk: "High", prediction: "Chronic injury likely within 18 months if uncorrected." };
+    };
+
+    // =========================================================================
+    // ⚙️ LAYER 3: CORE LOGIC EXECUTION
+    // =========================================================================
+
+    const lower = input.toLowerCase();
+    const timeCtx = getTimeContext();
+    const sentiment = detectSentiment(lower);
+    
+    // Analyze Audit State
+    let worst = { part: "balanced", score: 100, key: "" };
+    let second = { part: "great", score: 100, key: "" };
+    
+    if (audit) {
+        const map = {
+            head: { name: "Head/Neck", tips: "Head Loading" },
+            shoulders: { name: "Shoulders", tips: "Standing Pulls" },
+            spine: { name: "Spine", tips: "Spinal Waves" },
+            hip: { name: "Hips", tips: "Split Squats" },
+            gait: { name: "Gait", tips: "Hyperarch Hops" }
+        };
+        for (let key in map) {
+            const val = audit[key]?.val || 100;
+            if (val < worst.score) {
+                second = worst;
+                worst = { part: map[key].name, score: val, key, tips: map[key].tips };
+            } else if (val < second.score) {
+                second = { part: map[key].name, score: val, key, tips: map[key].tips };
+            }
+        }
+    }
+
+    // =========================================================================
+    // 💬 LAYER 4: RESPONSE SYNTHESIS (With Actions)
+    // =========================================================================
+
+    let reply = "";
+    let action = null; // Object { label: string, type: string, payload: any }
+    let contextBonus = "";
+
+    // 4.1 Keyword Matching (Intent Detection)
+    const isAcademy = lower.includes("learn") || lower.includes("reading") || lower.includes("class") || lower.includes("academy");
+    const isRoutine = lower.includes("plan") || lower.includes("routine") || lower.includes("workout") || lower.includes("start");
+    const isPain = lower.includes("pain") || lower.includes("hurt");
+    
+    // Fuzzy Anatomy Match
+    let bestMatchKey = null;
+    Object.keys(anatomyMatrix).forEach(term => {
+        if (fuzzyMatch(lower, term) > 0.85) bestMatchKey = anatomyMatrix[term];
+    });
+
+    // --- LOGIC BRANCHES ---
+
+    // BRANCH A: Direct Action Request (Navigation)
+    if (isAcademy) {
+        reply = "Knowledge is the first step to correction. I'm opening the **Movement Academy** now. Start with the 'Biotensegrity' masterclass.";
+        action = { label: "OPEN ACADEMY", type: "NAVIGATE", payload: "academy" };
+    }
+    // BRANCH B: Routine Generation
+    else if (isRoutine) {
+        reply = `I've constructed a ${timeCtx.phase} protocol targeting your **${worst.part}** (${worst.score}%).\n\n` +
+                `**Objective:** Restore elastic recoil and alignment.\n` +
+                `**Key Move:** ${worst.tips}\n\n` +
+                `Ready to execute sequence?`;
+        action = { label: "LAUNCH SESSION", type: "START_SESSION", payload: generatedRoutine };
+    }
+    // BRANCH C: Anatomy/Pain Specific
+    else if (bestMatchKey && audit) {
+        const score = audit[bestMatchKey]?.val || "?";
+        const risk = calculateRisk(bestMatchKey, score);
+        reply = `You asked about **${bestMatchKey.toUpperCase()}**. Your biometric score here is **${score}%**.\n\n` +
+                `**Kinetic Reality:** ${risk.prediction}\n` +
+                `In biotensegrity, the site of pain is rarely the source. This is likely a compensation pattern.`;
+        
+        // Contextual Recommendation
+        if (bestMatchKey === 'head') contextBonus = "\n\n💡 *Tip: Check your tongue posture. Press tongue to roof of mouth to stabilize the deep neck line.*";
+        if (bestMatchKey === 'gait') contextBonus = "\n\n💡 *Tip: Stop heel striking. Land mid-foot to engage the fascial spring.*";
+        
+        reply += contextBonus;
+        
+        // Suggest specific fix
+        action = { label: `FIX ${bestMatchKey.toUpperCase()}`, type: "START_SESSION", payload: null }; // Will trigger preset load
+    }
+    // BRANCH D: General Greetings / Status
+    else if (lower.includes("hi") || lower.includes("hello") || lower.includes("status")) {
+        reply = `Systems Online. ${timeCtx.icon} **Good ${timeCtx.phase}.**\n\n` +
+                `**Current Bio-Integrity:** ${audit?.score || "?"}%\n` +
+                `**Weakest Link:** ${worst.part} (${worst.score}%)\n` +
+                `**Advisory:** ${timeCtx.advice}\n\n` +
+                `What is your directive?`;
+    }
+    // BRANCH E: Lifestyle/Nutrition (Expansion)
+    else if (lower.includes("water") || lower.includes("diet") || lower.includes("sleep")) {
+        reply = `**Fascial Health Protocol:**\n\n` +
+                `1. **Hydration:** Fascia is 70% water. If you are dehydrated, you are brittle. Drink 0.5oz per lb of bodyweight.\n` +
+                `2. **Collagen:** The building block of your web. Bone broth or Vitamin C + Glycine.\n` +
+                `3. **Sleep:** Tensegrity creates space during REM sleep. If you don't sleep, you shrink.`;
+    }
+    // FALLBACK
+    else {
+        reply = `I am analyzing your query against your biomechanical data.\n\n` +
+                `**Current Priority:** Fix the ${worst.part} (${worst.score}%).\n` +
+                `Unless your question solves that, it is a distraction. Focus on the foundation.`;
+        action = { label: "VIEW DATA", type: "NAVIGATE", payload: "progress" };
+    }
+
+    // Distress Override
+    if (sentiment === "distress") {
+        reply = `⚠️ **Pain Signal Detected.**\n\n` +
+                `Stop immediately. Pain is not gain; it is a request for change. ` +
+                `We need to downregulate your nervous system. Switch to **Parasympathetic Breathing** now.`;
+        action = { label: "EMERGENCY RESET", type: "LOAD_PRESET", payload: "Sedentary Reset" };
+    }
+
+    // =========================================================================
+    // 🚀 LAYER 5: EXECUTION
+    // =========================================================================
+    
+    // Add to history with potential action button
+    setChatHistory(prev => [...prev, { 
+        sender: 'ai', 
+        text: reply, 
+        action: action 
+    }]);
+    
+    // Audio Feedback (Optional voice line)
+    if (window.speechSynthesis && !lower.includes("silent")) {
+        // Only speak the first sentence to be less annoying
+        const utterance = new SpeechSynthesisUtterance(reply.split('.')[0]);
+        utterance.rate = 1.1;
+        utterance.volume = 0.2;
+        // window.speechSynthesis.speak(utterance); // Uncomment for voice
+    }
+};
+
+// 3. ACTION HANDLER (Paste into App component where you define handleChat)
+const handleCoachAction = (action) => {
+    if (!action) return;
+    
+    addLog(`Executing: ${action.type} -> ${action.label}`);
+    
+    switch (action.type) {
+        case 'NAVIGATE':
+            setTab(action.payload);
+            setPostAnalysisMode(false); // Close side panel if needed for mobile
+            break;
+        case 'START_SESSION':
+    if (action.payload) {
+        setActiveProgram(action.payload);
+    } else {
+        // Force generation AND immediate launch
+        generateProgram(); 
+        // We use a tiny timeout to let the state update, then grab it
+        setTimeout(() => {
+            setActiveProgram(prev => prev || generatedRoutine); 
+        }, 100);
+    }
+    break;
+        case 'LOAD_PRESET':
+            loadPreset(action.payload);
+            break;
+        default:
+            console.warn("Unknown Action", action);
+    }
+};
     // REPLACE the remaining arrow function with this:
 function drawSkeleton(keypoints, view) {
   const canvas = document.getElementById(`canvas-${view}`);
@@ -5558,7 +5809,13 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
             </div>
 
             <div className="mt-8 bg-slate-900/60 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
-                <AICoach audit={audit} symptoms={symptoms} chatHistory={chatHistory} onSend={handleChat} />
+                <AICoach 
+                audit={audit} 
+                symptoms={symptoms} 
+                chatHistory={chatHistory} 
+                onSend={handleChat} 
+                onAction={handleCoachAction} 
+            />
             </div>
         </div>
     </>
