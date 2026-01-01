@@ -5265,316 +5265,270 @@ const startLiveMode = async () => {
     // ... inside the App component return statement ...
 
     const runAnalysis = async () => {
-    // 1. HELPER: Validity Check
-    const valid = (lm) => lm && (lm.score > 0.5 || lm.visibility > 0.5);
+        // 1. HELPER: Validity Check
+        const valid = (lm) => lm && (lm.score > 0.5 || lm.visibility > 0.5);
 
-    let captured3DData = null; // This is the variable we must populate
-    let net = system.detector;
+        let captured3DData = null; 
+        let net = system.detector;
 
-    if (!navigator.onLine) {
-        addLog(" Offline — Connect to analyze.");
-        setStatus(prev => ({ ...prev, analyzing: false }));
-        return;
-    }
+        if (!navigator.onLine) {
+            addLog(" Offline — Connect to analyze.");
+            setStatus(prev => ({ ...prev, analyzing: false }));
+            return;
+        }
 
-    // 2. UI LOADING STATE
-    setStatus(prev => ({
-        ...prev,
-        analyzing: true,
-        logs: ["Initiating Neural Core V85...", ...prev.logs]
-    }));
-    document.body.classList.add('analyzing'); 
-    document.querySelectorAll('.upload-slot.active').forEach(slot => slot.classList.add('scanning'));
+        // 2. UI LOADING STATE
+        setStatus(prev => ({
+            ...prev,
+            analyzing: true,
+            logs: ["Initiating Neural Core V85...", ...prev.logs]
+        }));
+        document.body.classList.add('analyzing'); 
+        document.querySelectorAll('.upload-slot.active').forEach(slot => slot.classList.add('scanning'));
 
-    await new Promise(r => setTimeout(r, 50)); // Render cycle pause
+        await new Promise(r => setTimeout(r, 50)); 
 
-    // 3. PREPARE DATA
-    const views = Object.keys(uploads).filter(k => uploads[k] && uploads[k].url);
-    if (views.length === 0 && symptoms.length === 0) {
-        addLog("Upload at least one photo.");
-        setStatus(prev => ({ ...prev, analyzing: false }));
-        return;
-    }
+        // 3. PREPARE DATA
+        const views = Object.keys(uploads).filter(k => uploads[k] && uploads[k].url);
+        if (views.length === 0 && symptoms.length === 0) {
+            addLog("Upload at least one photo.");
+            setStatus(prev => ({ ...prev, analyzing: false }));
+            return;
+        }
 
-    document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove('scanning'));
+        document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove('scanning'));
 
-    let rawScores = { head: [], shoulders: [], spine: [], hip: [], gait: [] };
-    let detectedIssues = new Set();
-    
-    // Helper for Angle/Torsion
-    const calculateTorsion = (p1, p2) => {
-        if (!p1 || !p2) return 0;
-        const width = Math.abs(p1.x - p2.x);
-        const depth = Math.abs(p1.z - p2.z); 
-        return Math.atan2(depth, width) * (180 / Math.PI);
-    };
+        let rawScores = { head: [], shoulders: [], spine: [], hip: [], gait: [] };
+        
+        // --- THE UNIFIED "GOOD" LOGIC ENGINE ---
+        // Helper for Angle/Torsion
+        const calculateTorsion = (p1, p2) => {
+            if (!p1 || !p2) return 0;
+            const width = Math.abs(p1.x - p2.x);
+            const depth = Math.abs(p1.z - p2.z); 
+            return Math.atan2(depth, width) * (180 / Math.PI);
+        };
 
-    const rateMetric = (point1, point2, axis = 'y', sensitivity = 300) => {  // Lowered from 800
-    if (!point1 || !point2) return 70;
-    const visualDelta = Math.abs(point1[axis] - point2[axis]);
-    const zDelta = Math.abs((point1.z || 0) - (point2.z || 0)) * 0.7;
-    const trueDeviation = Math.max(0, visualDelta - (zDelta * 1.0));
-    const score = 100 - (trueDeviation * sensitivity);
-    return Math.max(60, Math.min(100, Math.floor(score)));  // Higher floor 
-};
+        // Helper: Normalize dev for angles (0-1 scale)
+        const normAngleDev = (angle) => Math.min(Math.abs(180 - angle) / 90, 1);
 
-    try {
-        // --- ANALYSIS LOOP ---
-        for (const view of views) {
-            const img = uploadRefs[view].current;
-            if (!img || img.naturalWidth === 0) continue;
+        // THE "GOOD" RATE METRIC (Sensitivity 50 - Fixed & Isolated)
+        const rateMetric = (point1, point2, axis = 'y', sensitivity = 50) => {
+            if (!point1 || !point2) return 65;
+            const score1 = point1.score || point1.visibility || 0;
+            const score2 = point2.score || point2.visibility || 0;
 
-            const result = await system.detector.detect(img);
-
-            if (!result || !result.landmarks || result.landmarks.length === 0) {
-                addLog(` NO SKELETON FOUND in ${view}.`);
-                continue;
-            }
-
-            // === FIX: ROBUST 3D DATA CAPTURE ===
-            // We capture this INSIDE the loop where 'result' exists
-            if (result.worldLandmarks && result.worldLandmarks.length > 0) {
-                const worldLm = result.worldLandmarks[0];
-                // Prefer front view for best 3D accuracy, otherwise take what we get
-                if (view === 'front') {
-                    captured3DData = worldLm;
-                    addLog("Captured high-quality 3D depth from front view");
-                } else if (!captured3DData) {
-                    captured3DData = worldLm; 
-                    addLog(`Captured 3D depth from ${view} view (backup)`);
-                }
-            } else if (!captured3DData) {
-                // FALLBACK: If 'worldLandmarks' is missing (happens on some devices),
-                // map the 2D landmarks to a pseudo-3D structure so Holodeck works.
-                addLog("Generated pseudo-3D depth from 2D data");
-                captured3DData = result.landmarks[0].map(lm => ({
-                    x: lm.x, y: lm.y, z: 0, visibility: lm.visibility
-                }));
-            }
-
-            // 2D Keypoints for Skeleton Draw
-            const keypoints = result.landmarks[0].map((lm, i) => ({
-                x: lm.x, y: lm.y, z: 0, score: lm.visibility || 1.0, name: i
-            }));
-            const p = keypoints;
-            const landmarks3D = result.worldLandmarks ? result.worldLandmarks[0] : result.landmarks[0];
+            if (score1 < 0.15 || score2 < 0.15) return 65;
             
-            drawSkeleton(keypoints, view); // This calls the function you asked about
+            const visualDelta = Math.abs(point1[axis] - point2[axis]);
+            const zDelta = Math.abs((point1.z || 0) - (point2.z || 0)) * 0.8;
+            const trueDeviation = Math.max(0, visualDelta - zDelta);
+            
+            // The "Good" Math: Gentler curve
+            const baseScore = 100 - (Math.min(trueDeviation, 0.2) * sensitivity * 50);
+            const confWeight = (score1 + score2) / 2;
+            
+            return Math.max(40, Math.min(100, Math.floor(baseScore * confWeight)));
+        };
 
-            // --- 1. NEW HELPERS ---
-            // Helper: Normalize dev for angles (0-1 scale, 0=perfect, 1=90° off)
-            const normAngleDev = (angle) => Math.min(Math.abs(180 - angle) / 90, 1);
+        try {
+            // --- ANALYSIS LOOP ---
+            for (const view of views) {
+                const img = uploadRefs[view].current;
+                if (!img || img.naturalWidth === 0) continue;
 
-            // Rate with dynamic sensitivity
-            const rateMetric = (point1, point2, axis = 'y', sensitivity = 50) => {
-                if (!point1 || !point2) return 65;
-                const score1 = point1.score || point1.visibility || 0;
-                const score2 = point2.score || point2.visibility || 0;
+                const result = await system.detector.detect(img);
 
-                if (score1 < 0.15 || score2 < 0.15) return 65;
-                const visualDelta = Math.abs(point1[axis] - point2[axis]);
-                const zDelta = Math.abs((point1.z || 0) - (point2.z || 0)) * 0.8;
-                const trueDeviation = Math.max(0, visualDelta - zDelta);
-                const baseScore = 100 - (Math.min(trueDeviation, 0.2) * sensitivity * 50);
-                const confWeight = (score1 + score2) / 2;
-                return Math.max(40, Math.min(100, Math.floor(baseScore * confWeight)));
-            };
-
-            // --- 2. VIEW LOGIC ---
-            if (view === 'front') {
-                const lSh = landmarks3D[11], rSh = landmarks3D[12];
-                const lHip = landmarks3D[23], rHip = landmarks3D[24];
-                const lAnk = p[27], rAnk = p[28];
-                const nose = p[0]; // Nose for central alignment
-                const lEye = p[2], rEye = p[5]; // Eyes for head tilt
-
-                // 1. SHOULDERS (Existing)
-                if (valid(lSh) && valid(rSh)) {
-                    rawScores.shoulders.push(rateMetric(lSh, rSh, 'y', 8));
-                    const shTorsion = calculateTorsion(lSh, rSh);
-                    rawScores.shoulders.push(100 - (shTorsion * 3));
+                if (!result || !result.landmarks || result.landmarks.length === 0) {
+                    addLog(` NO SKELETON FOUND in ${view}.`);
+                    continue;
                 }
 
-                // 2. HIPS (Existing)
-                if (valid(lHip) && valid(rHip)) {
-                    rawScores.hip.push(rateMetric(lHip, rHip, 'y', 6));
+                // Capture 3D Data (Prefer Front)
+                if (result.worldLandmarks && result.worldLandmarks.length > 0) {
+                    const worldLm = result.worldLandmarks[0];
+                    if (view === 'front') {
+                        captured3DData = worldLm;
+                        addLog("Captured high-quality 3D depth from front view");
+                    } else if (!captured3DData) {
+                        captured3DData = worldLm; 
+                        addLog(`Captured 3D depth from ${view} view (backup)`);
+                    }
                 }
 
-                // 3. GAIT (Existing)
-                if (lAnk && rAnk && lAnk.score >= 0.3 && rAnk.score >= 0.3) {
-                    const pronation = Math.abs(lAnk.x - rAnk.x);
-                    rawScores.gait.push(100 - (Math.min(pronation, 0.15) * 600));
+                // 2D Keypoints mapping
+                const keypoints = result.landmarks[0].map((lm, i) => ({
+                    x: lm.x, y: lm.y, z: 0, score: lm.visibility || 1.0, name: i
+                }));
+                const p = keypoints;
+                const landmarks3D = result.worldLandmarks ? result.worldLandmarks[0] : result.landmarks[0];
+                
+                // Draw visual feedback
+                drawSkeleton(keypoints, view); 
+
+                // --- SINGLE PASS ANALYSIS (NO DUPLICATES) ---
+                if (view === 'front') {
+                    const lSh = landmarks3D[11], rSh = landmarks3D[12];
+                    const lHip = landmarks3D[23], rHip = landmarks3D[24];
+                    const lAnk = p[27], rAnk = p[28];
+                    const nose = p[0];
+                    const lEye = p[2], rEye = p[5];
+
+                    // 1. Shoulders (Level + Torsion)
+                    if (valid(lSh) && valid(rSh)) {
+                        rawScores.shoulders.push(rateMetric(lSh, rSh, 'y', 8));
+                        const shTorsion = calculateTorsion(lSh, rSh);
+                        // Weighted torsion score
+                        rawScores.shoulders.push(100 - (shTorsion * 2.5)); 
+                    }
+
+                    // 2. Hips (Level)
+                    if (valid(lHip) && valid(rHip)) {
+                        rawScores.hip.push(rateMetric(lHip, rHip, 'y', 6));
+                    }
+
+                    // 3. Gait (Stance Width & Symmetry)
+                    if (lAnk && rAnk && lAnk.score >= 0.3 && rAnk.score >= 0.3) {
+                        const pronation = Math.abs(lAnk.x - rAnk.x);
+                        rawScores.gait.push(100 - (Math.min(pronation, 0.15) * 600));
+                    }
+
+                    // 4. Head (Eye Level)
+                    if (lEye && rEye && lEye.score > 0.2 && rEye.score > 0.2) {
+                        rawScores.head.push(rateMetric(lEye, rEye, 'y', 15));
+                    }
+
+                    // 5. Spine (Center Alignment)
+                    if (nose && lHip && rHip && nose.score > 0.2) {
+                        const hipCenterX = (lHip.x + rHip.x) / 2;
+                        const deviation = Math.abs(nose.x - hipCenterX);
+                        const spineScore = 100 - (deviation * 400); 
+                        rawScores.spine.push(Math.max(40, Math.min(100, spineScore)));
+                    }
                 }
 
-                // --- NEW FIXES ---
+                if (view === 'back') {
+                    const lSh = p[11], rSh = p[12];
+                    const lHip = p[23], rHip = p[24];
 
-                // 4. HEAD (New: Eye Levelness)
-                if (lEye && rEye && lEye.score > 0.2 && rEye.score > 0.2) {
-                     // Check if eyes are level on Y axis
-                    rawScores.head.push(rateMetric(lEye, rEye, 'y', 15));
+                    if (valid(lSh) && valid(rSh)) {
+                        rawScores.shoulders.push(rateMetric(lSh, rSh, 'y', 8));
+                    }
+                    if (valid(lHip) && valid(rHip)) {
+                        rawScores.hip.push(rateMetric(lHip, rHip, 'y', 6));
+                    }
                 }
 
-                // 5. SPINE (New: Nose alignment relative to Hip Center)
-                if (nose && lHip && rHip && nose.score > 0.2) {
-                    const hipCenterX = (lHip.x + rHip.x) / 2;
-                    const deviation = Math.abs(nose.x - hipCenterX);
-                    // Penalize if nose is not directly above zipper line
-                    const spineScore = 100 - (deviation * 400); 
-                    rawScores.spine.push(Math.max(40, Math.min(100, spineScore)));
+                if (view === 'side') {
+                    // Neck Angle
+                    const reqNeck = [0, 11, 23];
+                    if (reqNeck.every(idx => p[idx] && p[idx].score >= 0.3)) {
+                        const neckAngle = calculateAngle(p[0], p[11], p[23]);
+                        rawScores.head.push(100 - (normAngleDev(neckAngle) * 40));
+                    }
+                    // Lumbar Spine
+                    const reqLumbar = [23, 25, 11];
+                    if (reqLumbar.every(idx => p[idx] && p[idx].score >= 0.3)) {
+                        const lumbarAngle = calculateAngle(p[23], p[25], p[11]);
+                        rawScores.spine.push(100 - (normAngleDev(lumbarAngle) * 50));
+                    }
+                    // Ankle Mobility
+                    const reqAnkle = [23, 25, 27];
+                    if (reqAnkle.every(idx => p[idx] && p[idx].score >= 0.3)) {
+                        const ankleAngle = calculateAngle(p[23], p[25], p[27]);
+                        rawScores.gait.push(100 - (normAngleDev(ankleAngle) * 40));
+                    }
                 }
             }
+        } catch (err) { console.error(err); }
 
-            if (view === 'back') {
-                const lSh = p[11], rSh = p[12];
-                const lHip = p[23], rHip = p[24];
+        // 4. AGGREGATE & INFER
+        const avg = (arr) => {
+            const valid = arr.filter(n => typeof n === 'number' && !isNaN(n));
+            return valid.length ? valid.reduce((a, b) => a + b) / valid.length : null;
+        };
 
-                if (lSh && rSh && lSh.score >= 0.3 && rSh.score >= 0.3) {
-                    rawScores.shoulders.push(rateMetric(lSh, rSh, 'y', 8));
-                    const shTorsion = landmarks3D[11] && landmarks3D[12] ? calculateTorsion(landmarks3D[11], landmarks3D[12]) : 0;
-                    rawScores.shoulders.push(100 - (shTorsion * 3));
-                }
-                if (lHip && rHip && lHip.score >= 0.3 && rHip.score >= 0.3) {
-                    rawScores.hip.push(rateMetric(lHip, rHip, 'y', 6));
-                }
-            }
+        let final = {
+            head: avg(rawScores.head),
+            shoulders: avg(rawScores.shoulders),
+            spine: avg(rawScores.spine),
+            hip: avg(rawScores.hip),
+            gait: avg(rawScores.gait)
+        };
 
-            if (view === 'side') {
-                // Neck
-                const reqNeck = [0, 11, 23];
-                if (reqNeck.every(idx => p[idx] && p[idx].score >= 0.3)) {
-                    const neckAngle = calculateAngle(p[0], p[11], p[23]);
-                    const neckDevNorm = normAngleDev(neckAngle);
-                    rawScores.head.push(100 - (neckDevNorm * 40));
-                }
-                // Jaw
-                const reqJaw = [3, 11, 23];
-                if (reqJaw.every(idx => p[idx] && p[idx].score >= 0.3)) {
-                    const jawAngle = calculateAngle(p[3], p[11], p[23]);
-                    const jawDevNorm = normAngleDev(jawAngle);
-                    rawScores.head.push(100 - (jawDevNorm * 30));
-                }
-                // Spine
-                const reqLumbar = [23, 25, 11];
-                if (reqLumbar.every(idx => p[idx] && p[idx].score >= 0.3)) {
-                    const lumbarAngle = calculateAngle(p[23], p[25], p[11]);
-                    const lumbarDevNorm = normAngleDev(lumbarAngle);
-                    rawScores.spine.push(100 - (lumbarDevNorm * 50));
-                }
-                // Ankle
-                const reqAnkle = [23, 25, 27];
-                if (reqAnkle.every(idx => p[idx] && p[idx].score >= 0.3)) {
-                    const ankleAngle = calculateAngle(p[23], p[25], p[27]);
-                    const ankleDevNorm = normAngleDev(ankleAngle);
-                    rawScores.gait.push(100 - (ankleDevNorm * 40));
-                }
-            }
+        // Fallbacks
+        Object.keys(final).forEach(k => {
+            if (final[k] === null || isNaN(final[k])) final[k] = 75;
+            final[k] = Math.max(10, Math.min(100, Math.floor(final[k])));
+        });
 
-// ... [END PRESERVED LOGIC] ...
+        const scoreValues = Object.values(final).filter(v => typeof v === 'number');
+        const average = scoreValues.length ? scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length : 70;
+        const minimum = scoreValues.length ? Math.min(...scoreValues) : 70;
+        
+        // Weighted Total: Weakest link drags score down (Realistic)
+        const totalScore = Math.floor((average * 0.7) + (minimum * 0.3));
+
+        const baselineAge = 30; 
+        const agePenalty = (100 - totalScore) * 0.4;
+        const structuralAge = Math.floor(baselineAge + agePenalty);
+
+        const newAudit = {
+            date: new Date().toLocaleDateString(),
+            score: totalScore,
+            bioAge: structuralAge,
+            ageDiff: structuralAge - baselineAge,
+            landmarks3D: captured3DData, 
+            forecast: { predicted: Math.floor(Math.max(0, totalScore + 5)), slope: 0.5 },
+            head: { val: final.head, grade: getGrade(final.head) },
+            shoulders: { val: final.shoulders, grade: getGrade(final.shoulders) },
+            spine: { val: final.spine, grade: getGrade(final.spine) },
+            gait: { val: final.gait, grade: getGrade(final.gait) },
+            hip: { val: final.hip, grade: getGrade(final.hip) }
+        };
+
+        addLog("Synchronizing Biometric Data...");
+        await new Promise(r => setTimeout(r, 1500)); 
+
+        setAudit(newAudit);
+        setHistory([newAudit, ...history]);
+
+        const latestImage = uploads.side?.url || uploads.front?.url || uploads.back?.url;
+        if (history.length === 0) setBeforeImage(latestImage);
+        setAfterImage(latestImage);
+
+        setStatus(prev => ({ ...prev, analyzing: false }));
+        
+        // Save to LocalStorage
+        localStorage.setItem('biometric_data_v99', JSON.stringify({ history: [newAudit, ...history], symptoms, prefs: userPrefs }));
+
+        setTab(history.length === 0 ? 'results' : 'dashboard');
+
+        SFX.success();
+        generateProgram();                    
+        setShowProtocolButton(true);           
+        setPostAnalysisMode(true);             
+        document.body.classList.remove('analyzing');
+        document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove('scanning'));
+        
+        // Confetti
+        const confettiContainer = document.createElement('div');
+        confettiContainer.style.position = 'fixed';
+        confettiContainer.style.inset = '0';
+        confettiContainer.style.pointerEvents = 'none';
+        confettiContainer.style.zIndex = '100';
+        document.body.appendChild(confettiContainer);
+        for (let i = 0; i < 50; i++) {
+            const c = document.createElement('div');
+            const color = ['#22d3ee', '#fff', '#0ea5e9'][Math.floor(Math.random() * 3)];
+            c.className = 'confetti';
+            c.style.left = Math.random() * 100 + 'vw';
+            c.style.background = color;
+            c.style.animationDelay = Math.random() * 2 + 's';
+            confettiContainer.appendChild(c);
         }
-    } catch (err) { console.error(err); }
-
-    // 4. AGGREGATE & INFER
-    const avg = (arr) => {
-    const valid = arr.filter(n => typeof n === 'number' && !isNaN(n));
-    return valid.length ? valid.reduce((a, b) => a + b) / valid.length : null;
-};
-
-let final = {
-    head: avg(rawScores.head),
-    shoulders: avg(rawScores.shoulders),
-    spine: avg(rawScores.spine),
-    hip: avg(rawScores.hip),
-    gait: avg(rawScores.gait)
-};
-
-
-    // Independent Fallbacks
-    // If a part wasn't scanned, default it to 75 (Average/Good) rather than copying bad scores from other parts.
-    Object.keys(final).forEach(k => {
-        if (final[k] === null || isNaN(final[k])) {
-            final[k] = 75; // Neutral baseline
-        }
-        // Ensure strictly between 0 and 100
-        final[k] = Math.max(10, Math.min(100, Math.floor(final[k])));
-    });
-
-    // Safe scoreValues (filter non-numbers, though fallbacks ensure all valid)
-const scoreValues = Object.values(final).filter(v => typeof v === 'number' && !isNaN(v));
-
-// Compute average/min with fallbacks (empty → neutral 70)
-const average = scoreValues.length ? scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length : 70;
-const minimum = scoreValues.length ? Math.min(...scoreValues) : 70;
-
-// NEW: Re-weight for realism (min dominates as "weakest link")
-const totalScore = Math.floor((average * 0.7) + (minimum * 0.3));
-
-// Keep bio age (it's fine, no changes needed)
-const baselineAge = 30; 
-const agePenalty = (100 - totalScore) * 0.4;
-const structuralAge = Math.floor(baselineAge + agePenalty);
-
-    // --- FIX: REMOVE BROKEN V86 BLOCK, USE CAPTURED VARIABLE ---
-    const newAudit = {
-        date: new Date().toLocaleDateString(),
-        score: totalScore,
-        bioAge: structuralAge,
-        ageDiff: structuralAge - baselineAge,
-        landmarks3D: captured3DData, // <--- This now holds reliable data
-        forecast: { predicted: Math.floor(Math.max(0, totalScore + 5)), slope: 0.5 },
-        head: { val: final.head, grade: getGrade(final.head) },
-        shoulders: { val: final.shoulders, grade: getGrade(final.shoulders) },
-        spine: { val: final.spine, grade: getGrade(final.spine) },
-        gait: { val: final.gait, grade: getGrade(final.gait) },
-        hip: { val: final.hip, grade: getGrade(final.hip) }
+        setTimeout(() => confettiContainer.remove(), 4000);
     };
-
-    // Trend Forecast
-    const recent = history.slice(0, 5).map(h => h.score).reverse();
-    if (recent.length > 1) {
-        // [Existing trend logic preserved]
-        // ...
-    }
-
-    addLog("Synchronizing Biometric Data...");
-    await new Promise(r => setTimeout(r, 4200)); // Dramatic pause
-
-    setAudit(newAudit);
-    setHistory([newAudit, ...history]);
-
-    // Update Images
-    const latestImage = uploads.side?.url || uploads.front?.url || uploads.back?.url;
-    if (history.length === 0) setBeforeImage(latestImage);
-    setAfterImage(latestImage);
-
-    setStatus(prev => ({ ...prev, analyzing: false }));
-    localStorage.setItem('biometric_data_v99', JSON.stringify({ history: [newAudit, ...history], symptoms, prefs: userPrefs }));
-
-    setTab(history.length === 0 ? 'results' : 'dashboard');
-
-    SFX.success();
-    generateProgram();                    
-    setShowProtocolButton(true);          
-    setPostAnalysisMode(true);            
-    document.body.classList.remove('analyzing');
-    document.querySelectorAll('.upload-slot').forEach(slot => slot.classList.remove('scanning'));
-    
-    // Confetti
-    const confettiContainer = document.createElement('div');
-    confettiContainer.style.position = 'fixed';
-    confettiContainer.style.inset = '0';
-    confettiContainer.style.pointerEvents = 'none';
-    confettiContainer.style.zIndex = '100';
-    document.body.appendChild(confettiContainer);
-    for (let i = 0; i < 50; i++) {
-        const c = document.createElement('div');
-        c.className = 'confetti';
-        c.style.left = Math.random() * 100 + 'vw';
-        c.style.background = ['#22d3ee', '#fff', '#0ea5e9'][Math.floor(Math.random() * 3)];
-        c.style.animationDelay = Math.random() * 2 + 's';
-        confettiContainer.appendChild(c);
-    }
-    setTimeout(() => confettiContainer.remove(), 4000);
-};
     // --- V101.0 APEX ARCHITECT ENGINE (TRUE VARIANCE & ROULETTE SELECTION) ---
 const generateProgram = () => {
     if (!audit) return;
