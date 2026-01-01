@@ -683,13 +683,14 @@ const ACADEMY = [
     }
 ];
 
-// --- PRESET PROTOCOLS ---
 const PRESET_PROTOCOLS = {
     "Tech Neck": ["head_loading", "chest_opener", "trap_release", "standing_pull"],
     "Rounded Shoulders": ["chest_opener", "arm_raise", "standing_pull", "body_wave"],
     "Sedentary Reset": ["body_bounce", "split_squat", "trunk_twist", "plantar_release"],
     "Hyperarch Fascia": ["plantar_release", "towel_curl", "hyperarch"],
-    "Head-Loading": ["head_loading", "head_loaded_standing_hinge", "head_loaded_split_squat", "head_loaded_coiling"]
+    "Head-Loading": ["head_loading_level1", "head_loading_level2", "head_loading_level3"]
+
+
 };
 
 // --- HYPER-PERSONALIZED DATABASE (V85.0 APEX ARCHITECT) ---
@@ -701,6 +702,39 @@ const EXERCISE_DB = [
             { level: 2, name: "Head-Loaded Standing Hip Hinge", demoType: "head_hinge", duration: 90, desc: "Basic axial loading with hip hinge to teach posterior chain under head load.", steps: ["Balance 5-10lb on head", "Hinge at hips, push butt back", "Keep spine neutral", "Return to stand"], videoSearch: "good morning exercise with medicine ball overhead" },
             { level: 3, name: "Head Loaded March", demoType: "head_march", duration: 60, desc: "Dynamic stability marching under axial load.", steps: ["Balance weight on head", "March slowly in place", "No wobble", "Maintain tall posture"], videoSearch: "posture head weighting marching" }
         ]
+    },
+    {
+        id: "head_loading_level1",
+        title: "Head-Loading Step 1",
+        target_grade: "head",
+        pattern: "posture_reset",
+        tissues: "Deep Cervical Stabilizers",
+        phase: 2,
+        synergies: ["Neck Pain", "Forward Head"],
+        equipment: "required",
+        levels: [{ level: 1, name: "Standing Head Loading", demoType: "head_loading_basic", duration: 90, desc: "Basic axial loading to establish perfect spinal alignment.", steps: ["Place light weight on head", "Stand tall, arms reaching up", "Lengthen from tailbone to crown", "Deep breathing"], videoSearch: "medicine ball balanced on head posture" }]
+    },
+    {
+        id: "head_loading_level2",
+        title: "Head-Loading Step 2",
+        target_grade: "head",
+        pattern: "posture_reset",
+        tissues: "Deep Cervical / Posterior Chain",
+        phase: 2,
+        synergies: ["Neck Pain", "Posture"],
+        equipment: "required",
+        levels: [{ level: 1, name: "Head-Loaded Hip Hinge", demoType: "head_hinge", duration: 90, desc: "Add posterior chain movement while maintaining cervical load.", steps: ["Keep weight balanced", "Hinge at hips", "Neutral spine", "Drive through heels"], videoSearch: "good morning with weight on head" }]
+    },
+    {
+        id: "head_loading_level3",
+        title: "Head-Loading Step 3",
+        target_grade: "head",
+        pattern: "posture_reset",
+        tissues: "Full Axial Chain / VMO",
+        phase: 2,
+        synergies: ["Neck Pain", "Knee Pain", "Posture"],
+        equipment: "required",
+        levels: [{ level: 1, name: "Head-Loaded ATG Split Squat", demoType: "head_split", duration: 120, desc: "Deep unilateral range with axial loading — the ultimate posture challenge.", steps: ["Weight balanced on head", "Long stride, deep drop", "Front knee over toe", "Torso upright"], videoSearch: "head loaded atg split squat" }]
     },
     { id: "plantar_release", title: "Plantar Release", target_grade: "gait", pattern: "foot_release", tissues: "Plantar Fascia", phase: 1, synergies: ["Foot Pain", "Knee Pain", "Back Pain"], equipment: "required", levels: [{ level: 1, name: "Standing Foot Roll", demoType: "foot_roll", duration: 90, desc: "Break up fascial adhesions while loaded.", steps: ["Stand on ball", "Apply bodyweight", "Find hot spots"], videoSearch: "standing plantar fascia release golf ball" }, { level: 2, name: "Plantar Fascia Release", demoType: "foot_roll", duration: 90, desc: "Shift weight dynamically across the arch.", steps: ["Ball under arch", "Shift weight front/back", "Breathe"], videoSearch: "standing plantar fascia release technique" }, { level: 3, name: "Active Toe Splay", demoType: "foot_roll", duration: 60, desc: "Neurological reactivation.", steps: ["Stand tall", "Splay toes", "Drive big toe down", "Lift others"], videoSearch: "toe splay foot exercise" }] },
     {
@@ -2038,20 +2072,47 @@ ctx.beginPath(); ctx.arc(hRx, hRy, 5 * s, 0, 2 * Math.PI); ctx.fillStyle = '#22d
     }
 }
                 else if (type === 'head_split') {
-                    const phase = easeInOutCubic((Math.sin(t * 2) + 1) / 2);
-                    const depth = phase * 30 * s;
-                    const headX = cx;
-                    // REDUCED NECK: Changed -80 to -55 to keep head on the shoulders
-                    const headY = cy - 55 * s + depth;
-                    drawEquipment('ball', headX, headY - 28 * s, 0);
-                    const frontKneeX = cx + 40 * s; const frontFootX = cx + 60 * s;
-                    drawSegment(cx, cy + depth, frontKneeX, cy + 40 * s + depth, 16 * s, '#22d3ee');
-                    drawSegment(frontKneeX, cy + 40 * s + depth, frontFootX, cy + 100 * s, 16 * s, '#22d3ee');
-                    drawSegment(cx, cy + depth, cx - 40 * s, cy + 60 * s + depth / 2, 16 * s, '#475569');
-                    drawSegment(cx - 40 * s, cy + 60 * s + depth / 2, cx - 60 * s, cy + 100 * s, 10 * s, '#475569');
-                    ctx.beginPath(); ctx.arc(headX, headY, 20 * s, 0, 2 * Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill();
-                    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText("HEAD-LOADED SPLIT SQUAT", 20, 30);
-                }
+    const phase = easeInOutCubic((Math.sin(t * 2) + 1) / 2);
+    const depth = phase * 35 * s;  // Deeper drop
+    const headX = cx + Math.sin(t * 2) * 2 * s;  // Slight natural sway
+    const headY = cy - 60 * s + depth * 0.3;  // Head stays high and stable
+    const hipY = cy + 10 * s + depth;
+    const frontFootX = cx + 55 * s;
+    const backFootX = cx - 55 * s;
+    const frontKneeX = cx + 45 * s;
+    const backKneeX = cx - 20 * s;
+
+    // Weight perfectly balanced on head
+    drawEquipment('ball', headX, headY - 35 * s, t * 0.5);  // Slight wobble for realism
+
+    // Front leg — deep ATG, knee well over toe
+    drawSegment(cx, hipY, frontKneeX, cy + 45 * s + depth, 18 * s, '#22d3ee');
+    drawSegment(frontKneeX, cy + 45 * s + depth, frontFootX, cy + 100 * s, 16 * s, '#22d3ee');
+
+    // Back leg — straight, heel up
+    drawSegment(cx, hipY, backKneeX, cy + 70 * s + depth * 0.5, 16 * s, '#475569');
+    drawSegment(backKneeX, cy + 70 * s + depth * 0.5, backFootX, cy + 100 * s, 14 * s, '#475569');
+
+    // Torso — perfectly upright, no lean
+    drawSegment(cx, hipY, cx, hipY - 80 * s, 18 * s, '#22d3ee');
+
+    // Head — stable on top
+    ctx.beginPath(); ctx.arc(headX, headY, 20 * s, 0, 2 * Math.PI); ctx.fillStyle = '#cbd5e1'; ctx.fill();
+
+    // VMO glow on front thigh when deep
+    if (phase > 0.6) {
+        drawMuscle(frontKneeX - 5 * s, cy + 45 * s + depth, frontKneeX + 10 * s, cy + 60 * s + depth, 16 * s, true, "VMO", 'right');
+    }
+
+    // Caption
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${14 * s}px sans-serif`; ctx.fillText("HEAD-LOADED ATG SPLIT SQUAT", 20, 30);
+
+    // Key cue when deep
+    if (phase > 0.7) {
+        ctx.fillStyle = '#f59e0b'; ctx.font = `bold ${12 * s}px sans-serif`;
+        ctx.fillText("KNEE OVER TOE • TORSO TALL", 20, 55);
+    }
+}
                 else if (type === 'head_coiling') {  // Coiling (simple version)
                     ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.fillText("HEAD-LOADED COILING", 20, 30);
                     // (reuses coiling_lunge logic + ball on head - you already have coiling_lunge, so it will look good)
@@ -3000,8 +3061,11 @@ const ProgramPlayer = ({ program, onClose, onFeedback }) => {
                     <div>
                         <div className="flex justify-between items-start mb-1">
                             <h3 className="text-xl font-black text-white mb-2">
-                                {currentExercise.baseTitle ? currentExercise.baseTitle : currentExercise.name}
-                            </h3>
+    {currentExercise.baseTitle || "Head-Loading"}
+</h3>
+<p className="text-sm text-cyan-400 mb-4">
+    Step {step + 1} of {program.length}
+</p>
                             <p className="text-sm text-cyan-400 mb-4">
                                 {currentExercise.baseTitle && `Step ${step + 1} of ${program.length}`}
                             </p>                            </div>
@@ -4758,52 +4822,38 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
     addLog(`V101 Logic: Generated ${finalRoutine.length} Unique Vectors`);
 };
     // --- PRESET LOADER ---
-    const loadPreset = (presetName) => {
-        const exerciseIds = PRESET_PROTOCOLS[presetName];
-        if (!exerciseIds || exerciseIds.length === 0) return;
+   const loadPreset = (presetName) => {
+    const exerciseIds = PRESET_PROTOCOLS[presetName];
+    if (!exerciseIds || exerciseIds.length === 0) return;
 
-        let routine = [];
+    let routine = exerciseIds.map((id, overallIdx) => {
+        const ex = EXERCISE_DB.find(e => e.id === id);
+        if (!ex) return null;
 
-        // Special case: Head-Loading = all progressions of head_loading
-        if (presetName === "Head-Loaded Power Flow") {
-            const headEx = EXERCISE_DB.find(e => e.id === "head_loading");
-            if (headEx) {
-                routine = headEx.levels.map((level, idx) => ({
-                    ...level,
-                    name: `Head-Loading - Step ${idx + 1}: ${level.name}`,
-                    id: headEx.id,
-                    baseTitle: "Head-Loading",
-                    reason: presetName,
-                    allLevels: headEx.levels,
-                    currentLevelIdx: idx,
-                    duration: level.duration || 90
-                }));
-            }
-        } else {
-            // All other presets: one exercise per ID, using level 1 or 2
-            routine = exerciseIds.map((id, overallIdx) => {
-                const ex = EXERCISE_DB.find(e => e.id === id);
-                if (!ex) return null;
-
-                const levelIdx = ex.levels.length > 1 ? 1 : 0;
-                const level = ex.levels[levelIdx];
-
-                return {
-                    ...level,
-                    name: `${presetName} - ${overallIdx + 1}: ${level.name || ex.title}`,
-                    id: ex.id,
-                    baseTitle: presetName,
-                    reason: presetName,
-                    allLevels: ex.levels,
-                    currentLevelIdx: levelIdx,
-                    duration: level.duration || 90
-                };
-            }).filter(Boolean);
+        // FORCE level 0 (first level) for head_loading_progression
+        // For all other exercises, use smart progression (level 1 or saved)
+        let levelIdx = 0;
+        if (id !== "head_loading_progression") {
+            const hist = exerciseHistory[id] || {};
+            levelIdx = hist.lastLevel || (ex.levels.length > 1 ? 1 : 0);
         }
 
-        setActiveProgram(routine);
-        addLog(`Loaded ${presetName} — ${routine.length} movements`);
-    };
+        const levelData = ex.levels[levelIdx];
+
+        return {
+            ...levelData,
+            id: ex.id,
+            baseTitle: ex.title,
+            reason: presetName,
+            allLevels: ex.levels,
+            currentLevelIdx: levelIdx,
+            duration: levelData.duration || 90
+        };
+    }).filter(Boolean);
+
+    setActiveProgram(routine);
+    addLog(`Loaded ${presetName} — ${routine.length} movements`);
+};
     // NEW: Update Goal Handler
     const updateGoal = () => setShowGoalSetter(true);
 
