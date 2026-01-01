@@ -419,6 +419,52 @@ const calculateAngle = (p1, p2, p3) => {
   return Math.acos(dot / (mag1 * mag2)) * (180 / Math.PI);
 };
 
+const calculateLivePostureScore = (keypoints) => {
+  if (!keypoints) return 0;
+
+  let total = 0;
+  let count = 0;
+
+  // Forward Head (ear to shoulder alignment) - using nose (0) and mid-shoulder
+  const nose = keypoints[0];
+  const leftShoulder = keypoints[11];
+  const rightShoulder = keypoints[12];
+  if (nose && leftShoulder && rightShoulder) {
+    const midShoulderX = (leftShoulder.x + rightShoulder.x) / 2;
+    const headDeviation = Math.abs(nose.x - midShoulderX);
+    total += 100 - (headDeviation * 800); // higher deviation = worse
+    count++;
+  }
+
+  // Shoulder levelness
+  if (leftShoulder && rightShoulder) {
+    const shoulderDiff = Math.abs(leftShoulder.y - rightShoulder.y);
+    total += 100 - (shoulderDiff * 1000);
+    count++;
+  }
+
+  // Hip levelness
+  const leftHip = keypoints[23];
+  const rightHip = keypoints[24];
+  if (leftHip && rightHip) {
+    const hipDiff = Math.abs(leftHip.y - rightHip.y);
+    total += 100 - (hipDiff * 1000);
+    count++;
+  }
+
+  // Knee alignment (valgus/varus proxy)
+  const leftKnee = keypoints[25];
+  const rightKnee = keypoints[26];
+  if (leftKnee && rightKnee && leftHip && rightHip) {
+    const midHipX = (leftHip.x + rightHip.x) / 2;
+    const midKneeX = (leftKnee.x + rightKnee.x) / 2;
+    const kneeDeviation = Math.abs(midKneeX - midHipX);
+    total += 100 - (kneeDeviation * 1200);
+    count++;
+  }
+
+  return count > 0 ? Math.round(total / count) : 50;
+};
 
 const SFX = {
     play: (freq, type, dur) => {
@@ -3397,6 +3443,7 @@ const ClinicalDashboard = ({ audit, onClose }) => {
 const CameraCapture = ({ onCapture, onClose }) => {
     const videoRef = useRef(null);
     const [timer, setTimer] = useState(null);
+    const [cameraError, setCameraError] = useState(false);
 
     useEffect(() => {
         let stream = null;
@@ -3444,6 +3491,8 @@ const App = () => {
     const viewportRef = useRef(null);
 
     const [uploads, setUploads] = useState({ front: null, side: null, back: null });
+    const [liveScore, setLiveScore] = useState(null);
+    const [lastAlertScore, setLastAlertScore] = useState(100);
     const [isModelLoading, setIsModelLoading] = useState(false);
     const [cameraActive, setCameraActive] = useState(null);
     const [system, setSystem] = useState({ detector: null });
@@ -3547,6 +3596,7 @@ useEffect(() => {
     const [postAnalysisMode, setPostAnalysisMode] = useState(false);
     const [isModelReady, setIsModelReady] = useState(false);
     const [liveMode, setLiveMode] = useState(false);
+    const [cameraError, setCameraError] = useState(false);
     const [liveKeypoints, setLiveKeypoints] = useState(null);
     const [sideKeypoints, setSideKeypoints] = useState(null);
     const liveVideoRef = useRef(null);
@@ -3596,36 +3646,60 @@ useEffect(() => {
                 }
 
                 const detectLoop = async () => {
-    if (!liveVideoRef.current || liveVideoRef.current.readyState < 2) {
-        animationFrameId = requestAnimationFrame(detectLoop);
-        return;
-    }
-
-    const results = await system.detector.detectForVideo(
-        liveVideoRef.current,
-        performance.now()
-    );
-
-    if (results.landmarks && results.landmarks[0]) {
-        const keypoints = results.landmarks[0];
-
-        // Check if full body is visible and confident
-        const requiredIndices = [11,12,23,24,25,26,27,28]; // shoulders, hips, knees, ankles
-        const visibleCount = requiredIndices.filter(i => keypoints[i]?.visibility > 0.6).length;
-
-        if (visibleCount >= 8 && liveCountdown === null) {
-            // Good pose detected → start 5-second hold countdown
-            setLiveCountdown(5);
-        }
-
-        setLiveKeypoints(keypoints);
-        drawLiveSkeleton(keypoints);
-    } else {
-        setLiveKeypoints(null);
-        setLiveCountdown(null); // Reset if pose lost
-    }
-
+  if (!liveVideoRef.current || liveVideoRef.current.readyState < 2) {
     animationFrameId = requestAnimationFrame(detectLoop);
+    return;
+  }
+
+  const results = await system.detector.detectForVideo(
+    liveVideoRef.current,
+    performance.now()
+  );
+
+  if (results.landmarks && results.landmarks[0]) {
+    const keypoints = results.landmarks[0];
+
+    // LOWERED THRESHOLD + MORE LENIENT COUNT
+    const requiredIndices = [11,12,23,24,25,26]; // shoulders, hips, knees
+    const visibleCount = requiredIndices.filter(i => 
+      keypoints[i] && (keypoints[i].visibility || keypoints[i].score || 0) > 0.5
+    ).length;
+
+    if (visibleCount >= 4) {  // Reduced from 6 → 4 (much more forgiving)
+      // Good enough pose detected
+      if (liveCountdown === null) {
+        setLiveCountdown(5);
+        addLog("Good pose locked — capturing in 5s");
+      }
+
+      const score = calculateLivePostureScore(keypoints);
+      setLiveScore(score);
+
+      // Gentle real-time feedback
+      if (score < 70 && lastAlertScore >= 80) {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        SFX.play(300, 'sine', 0.4);
+        setLastAlertScore(score);
+      } else if (score >= 80) {
+        setLastAlertScore(100);
+      }
+
+      setLiveKeypoints(keypoints);
+      drawLiveSkeleton(keypoints);
+
+    } else {
+      // Not enough keypoints — helpful feedback
+      setLiveScore(null);
+      setLiveCountdown(null);
+      setLiveKeypoints(null);
+    }
+  } else {
+    setLiveScore(null);
+    setLiveCountdown(null);
+    setLiveKeypoints(null);
+  }
+
+  animationFrameId = requestAnimationFrame(detectLoop);
 };
 
                 detectLoop();
@@ -3945,92 +4019,104 @@ useEffect(() => {
 
         setChatHistory(prev => [...prev, { sender: 'ai', text: reply }]);
     };
-    const drawSkeleton = (keypoints, view) => {
-        const canvas = document.getElementById(`canvas-${view}`);
-        if (!canvas || !uploadRefs[view].current) return;
+    // REPLACE the remaining arrow function with this:
+function drawSkeleton(keypoints, view) {
+  const canvas = document.getElementById(`canvas-${view}`);
+  if (!canvas || !uploadRefs[view].current) return;
 
-        const img = uploadRefs[view].current;
-        const container = canvas.parentElement;
-        const contW = container.clientWidth;
-        const contH = container.clientHeight;
+  const img = uploadRefs[view].current;
+  const container = canvas.parentElement;
+  const contW = container.clientWidth;
+  const contH = container.clientHeight;
 
-        // High-res canvas
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = contW * dpr;
-        canvas.height = contH * dpr;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(dpr, dpr);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = contW * dpr;
+  canvas.height = contH * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
-        ctx.clearRect(0, 0, contW, contH);
+  ctx.clearRect(0, 0, contW, contH);
 
-        // Draw the original image with proper letterboxing (object-contain)
-        const imgRatio = img.naturalWidth / img.naturalHeight;
-        const contRatio = contW / contH;
-        let drawW, drawH, offsetX = 0, offsetY = 0;
-        if (imgRatio > contRatio) {
-            drawH = contH;
-            drawW = drawH * imgRatio;
-            offsetX = (contW - drawW) / 2;
-        } else {
-            drawW = contW;
-            drawH = drawW / imgRatio;
-            offsetY = (contH - drawH) / 2;
+  // Letterbox image (object-contain)
+  const imgRatio = img.naturalWidth / img.naturalHeight;
+  const contRatio = contW / contH;
+  let drawW, drawH, offsetX = 0, offsetY = 0;
+  if (imgRatio > contRatio) {
+    drawH = contH;
+    drawW = drawH * imgRatio;
+    offsetX = (contW - drawW) / 2;
+  } else {
+    drawW = contW;
+    drawH = drawW / imgRatio;
+    offsetY = (contH - drawH) / 2;
+  }
+  ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+
+  // Scale keypoints to drawn image size
+  const scaledKeypoints = keypoints.map(kp => ({
+    x: kp.x * drawW + offsetX,
+    y: kp.y * drawH + offsetY,
+    score: kp.score || kp.visibility || 0
+  }));
+
+  // Connections (MediaPipe indices)
+  const connections = [
+    [11,12],[11,13],[13,15],[12,14],[14,16],
+    [11,23],[12,24],[23,25],[24,26],[23,24]
+  ].filter(pair => {
+    const a = keypoints[pair[0]];
+    const b = keypoints[pair[1]];
+    return a && b && a.score > 0.15 && b.score > 0.15;
+  });
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  connections.forEach(([i, j]) => {
+    const p1 = scaledKeypoints[i];
+    const p2 = scaledKeypoints[j];
+    const avgScore = (p1.score + p2.score) / 2;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.strokeStyle = avgScore > 0.4 ? '#22d3ee' : 'rgba(34,211,238,0.6)';
+    ctx.lineWidth = avgScore > 0.4 ? 5 : 3;
+    ctx.stroke();
+  });
+
+  // Keypoints (skip face 0–10)
+  scaledKeypoints.forEach((kp, i) => {
+    if (i > 10 && kp.score > 0.15) {
+      ctx.beginPath();
+      ctx.arc(kp.x, kp.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#0f172a';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(kp.x, kp.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = kp.score > 0.5 ? '#22d3ee' : '#f59e0b';
+      ctx.fill();
+    }
+  });
+};
+
+const startLiveMode = async () => {
+    setCameraError(false);
+    try {
+        // Direct user gesture → requests permission properly
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user", width: 1280, height: 720 }
+        });
+        if (liveVideoRef.current) {
+            liveVideoRef.current.srcObject = stream;
         }
-        ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-
-        // THIS IS THE KEY FIX: keypoints.x and .y are 0-1 normalized
-        // We scale them directly to the displayed image size (including offsets)
-        const scaledKeypoints = keypoints.map(kp => ({
-            x: kp.x * drawW + offsetX,
-            y: kp.y * drawH + offsetY,
-            score: kp.score
-        }));
-
-        // Draw skeleton lines
-        // Robust connections — works with MoveNet (17) and MediaPipe (33)
-        const connections = [
-            [5, 6], [5, 11], [6, 12], [11, 12],           // torso
-            [5, 7], [7, 9], [6, 8], [8, 10],              // arms
-            [11, 13], [13, 15], [12, 14], [14, 16],       // legs
-            [11, 23], [12, 24], [23, 25], [24, 26]         // extra lower body if available (MediaPipe)
-        ].filter(pair =>
-            pair[0] < keypoints.length && pair[1] < keypoints.length &&
-            keypoints[pair[0]] && keypoints[pair[1]] &&
-            keypoints[pair[0]].score > 0.2 && keypoints[pair[1]].score > 0.2
-        ); ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        connections.forEach(([i, j]) => {
-            const p1 = scaledKeypoints[i];
-            const p2 = scaledKeypoints[j];
-            if (!p1 || !p2) return;
-            const avgScore = (p1.score + p2.score) / 2;
-            if (avgScore > 0.2) {
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.strokeStyle = avgScore > 0.4 ? '#22d3ee' : 'rgba(34,211,238,0.5)';
-                ctx.lineWidth = avgScore > 0.4 ? 5 : 3;
-                ctx.stroke();
-            }
-        });
-
-        // Draw keypoints (cyan dots)
-        scaledKeypoints.forEach(kp => {
-            if (kp.score > 0.3) {
-                ctx.beginPath();
-                ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI);
-                ctx.fillStyle = '#0f172a';
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(kp.x, kp.y, 6, 0, 2 * Math.PI);
-                ctx.fillStyle = '#22d3ee';
-                ctx.fill();
-            }
-        });
-    };
+        setLiveMode(true);
+    } catch (err) {
+        console.error("Camera access failed:", err);
+        setCameraError(true);
+        alert("Camera access was blocked. Please allow camera permission in your browser settings and try again.");
+    }
+};
     // ... inside the App component return statement ...
-
 
     const runAnalysis = async () => {
         // FIXED: Helper function for checking landmark validity
@@ -4112,6 +4198,10 @@ const rateMetric = (point1, point2, axis = 'y', sensitivity = 5000) => {
                 }));
 
 const p = keypoints;
+const landmarks3D = result.worldLandmarks ? result.worldLandmarks[0] : result.landmarks[0];
+
+drawSkeleton(keypoints, view);
+
 
 
 // NEW: Knee Valgus (Front: Knees inward)
@@ -4138,97 +4228,55 @@ if (view === 'front' && valid(p[26]) && valid(p[28])) {
   rawScores.gait.push(100 - pronation);
 }
 
-                drawSkeleton(keypoints, view);
 
-                // --- ELITE ACCURACY UPGRADE: 3D DEPTH CALCULATION ---
-                // Extract 3D landmarks if available (MediaPipe Heavy provides these)
-                const landmarks3D = result.landmarks[0];
-
-                // Accurate Shoulder Twist (Transverse Plane)
-                if (valid(landmarks3D[11]) && valid(landmarks3D[12])) {
-                    const leftZ = landmarks3D[11].z;
-                    const rightZ = landmarks3D[12].z;
-                    const shoulderTwist = Math.abs(leftZ - rightZ);
-
-                    // If twist is high, the 2D 'width' is a lie. We adjust the score.
-                    if (shoulderTwist > 0.1) {
-                        addLog(`Transverse Twist Detected: ${(shoulderTwist * 100).toFixed(1)}%`);
-                        rawScores.shoulders.push(Math.max(40, 100 - (shoulderTwist * 500)));
-                    }
-                }
-
-                // Accurate Pelvic Tilt (Frontal Plane)
-                if (valid(landmarks3D[23]) && valid(landmarks3D[24])) {
-                    const leftY = landmarks3D[23].y;
-                    const rightY = landmarks3D[24].y;
-                    const pelvicTilt = Math.abs(leftY - rightY);
-
-                    // MediaPipe Heavy is 3x more sensitive to Y-axis differences than standard models
-                    if (pelvicTilt > 0.01) {
-                        detectedIssues.add("Functional Hip Hike");
-                        rawScores.hip.push(rateMetric(landmarks3D[23], landmarks3D[24], 'y', 2000)); // Increased sensitivity for 'Best in World' precision
-                    }
-                }
-
-                                addLog("Gemini AI enhancement skipped (optional feature)");
-
-                if (view === 'side') {
-                    setSideKeypoints(keypoints);
-                }
-
-// REPLACEMENT: Local AI Classifier (Better than Gemini - 100% Offline)
+// REPLACEMENT: Local AI Classifier (100% Offline)
                 try {
-                    // Simple rule-based classifier using your keypoints (expandable)
-                    const classifyPose = (kps) => {
-                        let flags = [];
+    // REFINED CLASSIFIER: Now View-Aware to prevent false positives
+    const classifyPose = (kps, view) => {
+        let flags = [];
 
-                        // Forward Head: Ear (8) ahead of shoulder (12) by >5% torso height
-                        if (valid(kps[8]) && valid(kps[12])) {
-                            const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3)); // Fallback hip
-                            const headDev = Math.abs(kps[8].x - kps[12].x) / torsoH;
-                            if (headDev > 0.08) flags.push({ class: 'forward_head', conf: headDev * 2 });
-                        }
+        // 1. FORWARD HEAD (Only run on SIDE view)
+        if (view === 'side' && valid(kps[8]) && valid(kps[12])) {
+            const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3));
+            const headDev = Math.abs(kps[8].x - kps[12].x) / torsoH;
+            if (headDev > 0.08) flags.push({ class: 'forward_head', conf: headDev * 2 });
+        }
 
-                        // Scoliosis Risk: Shoulder (11/12) or hip (23/24) Y-diff >3%
-                        const shYDiff = valid(kps[11]) && valid(kps[12]) ? Math.abs(kps[11].y - kps[12].y) : 0;
-                        const hipYDiff = valid(kps[23]) && valid(kps[24]) ? Math.abs(kps[23].y - kps[24].y) : 0;
-                        const curveRisk = Math.max(shYDiff, hipYDiff);
-                        if (curveRisk > 0.06) flags.push({ class: 'scoliosis_risk', conf: curveRisk * 20 });
+        // 2. SCOLIOSIS / TILT (Only run on FRONT or BACK view)
+        if ((view === 'front' || view === 'back') && valid(kps[11]) && valid(kps[12])) {
+            const shYDiff = Math.abs(kps[11].y - kps[12].y);
+            const hipYDiff = valid(kps[23]) && valid(kps[24]) ? Math.abs(kps[23].y - kps[24].y) : 0;
+            const curveRisk = Math.max(shYDiff, hipYDiff);
+            if (curveRisk > 0.06) flags.push({ class: 'scoliosis_risk', conf: curveRisk * 20 });
+        }
 
-                        // Pelvic Tilt: Hip (24) ahead/behind ankle (28) by >4%
-                        if (valid(kps[24]) && valid(kps[28])) {
-                            const torsoH = Math.abs(kps[12].y - (kps[24]?.y || kps[12].y + 0.3));
-                            const tiltDev = Math.abs(kps[24].x - kps[28].x) / torsoH;
-                            if (tiltDev > 0.07) flags.push({ class: 'pelvic_tilt', conf: tiltDev * 20 });
-                        }
+        // 3. KNEE VALGUS (Only run on FRONT view)
+        if (view === 'front' && valid(kps[24]) && valid(kps[26]) && valid(kps[28])) {
+            const kneeIn = Math.abs(kps[26].x - ((kps[24].x + kps[28].x) / 2));
+            if (kneeIn > 0.08) flags.push({ class: 'valgus_knees', conf: kneeIn * 15 });
+        }
 
-                        // Valgus Knees: Knee (26) inward of hip (24)/ankle (28) by >5%
-                        if (valid(kps[24]) && valid(kps[26]) && valid(kps[28])) {
-                            const kneeIn = Math.abs(kps[26].x - ((kps[24].x + kps[28].x) / 2));
-                            if (kneeIn > 0.08) flags.push({ class: 'valgus_knees', conf: kneeIn * 15 });
-                        }
+        if (flags.length === 0) return { class: 'normal', conf: 1.0 };
+        flags.sort((a, b) => b.conf - a.conf);
+        return { class: flags[0].class, conf: Math.min(1.0, flags[0].conf) };
+    };
 
-                        // Return highest conf flag (or normal)
-                        if (flags.length === 0) return { class: 'normal', conf: 1.0 };
-                        flags.sort((a, b) => b.conf - a.conf);
-                        return { class: flags[0].class, conf: Math.min(1.0, flags[0].conf) };
-                    };
+    // Pass the current 'view' to the classifier
+    const aiResult = classifyPose(keypoints, view);
+    
+    if (aiResult.conf > 0.6 && aiResult.class !== 'normal') {
+        detectedIssues.add(aiResult.class);
+        addLog(`Local AI Flag: ${aiResult.class} (${(aiResult.conf * 100).toFixed(0)}%)`);
 
-                    const aiResult = classifyPose(keypoints);
-                    
-                    if (aiResult.conf > 0.6 && aiResult.class !== 'normal') {
-                        detectedIssues.add(aiResult.class);
-                        addLog(`Local AI Flag: ${aiResult.class} (${(aiResult.conf * 100).toFixed(0)}%)`);
+        // Apply penalties only where appropriate
+        if (aiResult.class.includes('head')) rawScores.head.push(100 - (aiResult.conf * 55));
+        else if (aiResult.class.includes('scoliosis')) rawScores.spine.push(100 - (aiResult.conf * 50)); // Map tilt to spine
+        else if (aiResult.class.includes('valgus')) rawScores.gait.push(100 - (aiResult.conf * 55));
+    }
 
-                        if (aiResult.class.includes('head') || aiResult.class.includes('scoliosis')) rawScores.head.push(100 - (aiResult.conf * 55));
-                        else if (aiResult.class.includes('tilt') || aiResult.class.includes('pelvic')) rawScores.hip.push(100 - (aiResult.conf * 50));
-                        else if (aiResult.class.includes('valgus') || aiResult.class.includes('knee')) rawScores.gait.push(100 - (aiResult.conf * 55));
-                    }
-
-                } catch (e) {
-                    console.error("Local Classifier Error", e);
-                    addLog("Local AI Classifier Skipped");
-                }
+} catch (e) {
+    console.error("Local Classifier Error", e);
+}
 
               // --- FRONT VIEW: ELITE 3D ANALYSIS (V2) ---
 
@@ -4278,6 +4326,26 @@ if (view === 'front') {
             detectedIssues.add("Cross-Body Torque");
             addLog("⚠ Detected Spinal Torsion (Torque)");
         }
+    }
+}
+
+// --- BACK VIEW: SYMMETRY ANALYSIS ---
+if (view === 'back') {
+    // Map Back View symmetry to Head/Spine scores (Superficial Back Line)
+    const lSh = p[11], rSh = p[12];
+    const lHip = p[23], rHip = p[24];
+
+    if (valid(lSh) && valid(rSh) && valid(lHip) && valid(rHip)) {
+        // Calculate symmetry
+        const shSlope = Math.abs(lSh.y - rSh.y);
+        const hipSlope = Math.abs(lHip.y - rHip.y);
+        const symmetry = 100 - ((shSlope + hipSlope) * 1500);
+        
+        // Push to Head (Superficial Back Line) and Spine
+        const score = Math.max(50, Math.floor(symmetry));
+        rawScores.head.push(score); 
+        rawScores.spine.push(score);
+        addLog(`Back Symmetry Analysis: ${score}%`);
     }
 }
 
@@ -4748,71 +4816,100 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
             }} />}
 
             {/* LIVE REAL-TIME MODE OVERLAY */}
-            {liveMode && (
-    <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center p-4 animate-popIn">
-        <div className="relative w-full max-w-4xl h-[80vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-cyan-500/50">
-            {/* Webcam Video (mirrored) */}
-            <video
-                ref={liveVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-            />
+                        {liveMode && (
+                <div className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center p-4 animate-popIn">
+                    <div className="relative w-full max-w-4xl h-[80vh] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-cyan-500/50">
+                        {/* Webcam Video (mirrored) */}
+                        <video
+                            ref={liveVideoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
+                        />
 
-            {/* Live Skeleton Canvas */}
-            <canvas
-                ref={liveCanvasRef}
-                className="absolute inset-0 w-full h-full pointer-events-none"
-            />
+                        {/* Live Skeleton Canvas */}
+                        <canvas
+                            ref={liveCanvasRef}
+                            className="absolute inset-0 w-full h-full pointer-events-none"
+                        />
 
-            {/* Status Message */}
-            <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-10 py-5 rounded-2xl border border-cyan-500 shadow-2xl">
-                <div className="text-4xl font-black text-cyan-400 text-center">
-                    {liveKeypoints && liveCountdown === null ? "GOOD POSE DETECTED!" :
-                     liveCountdown !== null ? `CAPTURING IN ${liveCountdown}...` :
-                     "POSITION YOURSELF"}
-                </div>
-                <div className="text-sm text-slate-300 text-center mt-2">
-                    Stand 2–3 meters away • Full body in frame • Face forward
-                </div>
-            </div>
+                        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur px-10 py-5 rounded-2xl border border-cyan-500 shadow-2xl text-center">
+                            <div className="text-4xl font-black text-cyan-400">
+                                {liveKeypoints 
+                                    ? (liveCountdown !== null ? `CAPTURING IN ${liveCountdown}...` : "GOOD POSE LOCKED!")
+                                    : "FINDING POSE..."
+                                }
+                            </div>
 
-            {/* Countdown Number */}
-            {liveCountdown !== null && (
-                <div className="absolute inset-0 flex items-center justify-center text-9xl font-black text-white animate-ping">
-                    {liveCountdown}
+                            {liveScore !== null && (
+                                <div className="mt-4 text-6xl font-black text-white">
+                                    {liveScore}<span className="text-2xl text-cyan-400">%</span>
+                                </div>
+                            )}
+
+                            <div className="text-sm text-slate-300 mt-4 max-w-md">
+                                {liveKeypoints 
+                                    ? "Hold steady — capturing front view automatically"
+                                    : "Step back • Full body visible • Arms at sides • Face camera directly"
+                                }
+                            </div>
+                        </div>
+
+                        {cameraError && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-red-900/80 backdrop-blur">
+                                <div className="text-center">
+                                    <div className="text-4xl font-black text-white mb-4">Camera Blocked</div>
+                                    <p className="text-white mb-4">Please allow camera access</p>
+                                    <button 
+                                        onClick={() => setLiveMode(false)}
+                                        className="px-6 py-3 bg-white text-black rounded-xl font-bold"
+                                    >
+                                        Back
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Countdown Number */}
+                        {liveCountdown !== null && (
+                            <div className="absolute inset-0 flex items-center justify-center text-9xl font-black text-white animate-ping">
+                                {liveCountdown}
+                            </div>
+                        )}
+
+                        {/* Close Button */}
+                        <button
+                            onClick={() => {
+                                setLiveMode(false);
+                                if (liveVideoRef.current?.srcObject) {
+                                    liveVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                                }
+                                setLiveKeypoints(null);
+                                setLiveCountdown(null);
+                            }}
+                            className="absolute top-6 right-6 w-16 h-16 bg-red-600/90 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-2xl"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
             )}
 
-            {/* Close Button */}
-            <button
-                onClick={() => {
-                    setLiveMode(false);
-                    if (liveVideoRef.current?.srcObject) {
-                        liveVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
-                    }
-                    setLiveKeypoints(null);
-                    setLiveCountdown(null);
-                }}
-                className="absolute top-6 right-6 w-16 h-16 bg-red-600/90 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-2xl"
-            >
-                ✕
-            </button>
-        </div>
-    </div>
-)}
+            {/* ALL MODALS IN ONE FRAGMENT */}
+            <>
+                {isModelLoading && (
+                    <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center backdrop-blur-xl animate-popIn">
+                        <div className="w-20 h-20 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                        <div className="text-cyan-400 font-black text-xl tracking-widest animate-pulse">DOWNLOADING NEURAL CORE V85...</div>
+                        <div className="text-slate-500 text-xs mt-2 uppercase">Initial load may take 5-10 seconds</div>
+                    </div>
+                )}
+                {showReader && <ReaderMode item={showReader} onClose={() => setShowReader(null)} />}
+                {showGoalSetter && <GoalSetter currentGoal={currentGoal} onSave={saveGoal} onClose={() => setShowGoalSetter(false)} />}
+                {showShare && <ShareReport audit={audit} onClose={() => setShowShare(false)} />}
+            </>
 
-            {isModelLoading && (
-                <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center backdrop-blur-xl animate-popIn">
-                    <div className="w-20 h-20 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                    <div className="text-cyan-400 font-black text-xl tracking-widest animate-pulse">DOWNLOADING NEURAL CORE V85...</div>
-                    <div className="text-slate-500 text-xs mt-2 uppercase">Initial load may take 5-10 seconds</div>
-                </div>
-            )}
-            {showReader && <ReaderMode item={showReader} onClose={() => setShowReader(null)} />}
-            {showGoalSetter && <GoalSetter currentGoal={currentGoal} onSave={saveGoal} onClose={() => setShowGoalSetter(false)} />}
-            {showShare && <ShareReport audit={audit} onClose={() => setShowShare(false)} />}
             <div ref={viewportRef} className={`viewport ${status.analyzing ? 'analyzing-blur-fix' : ''}`}>
 
 
@@ -4944,6 +5041,7 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
                                 <span className="text-sm font-bold text-slate-300">High Intensity Mode</span>
                             </label>
                         </div>
+
 
                         {/* THIS MAKES THE 3 BOXES BIG AND NOT CUT OFF */}
                         <div className="flex-1 upload grid">
@@ -5231,70 +5329,72 @@ if (levelIdx > 1 && (userPhase < 3 || hist.goodStreaks < 2)) {
 
                 <div className="p-6 border-b border-slate-800 bg-slate-900/50 flex-1 overflow-y-auto">
 
-{/* --- CEO FIX: FUNCTIONAL NAV HEADER --- */}
-<div className="flex items-center justify-between mb-8">
-    
-    {/* LEFT SIDE: The Score & Bio Age */}
-<div className="flex gap-6">
-    <div>
-        <div className="text-[9px] font-bold text-cyan-500 uppercase tracking-widest mb-1">Structural Score</div>
-        <div className={`text-6xl font-black tracking-tighter leading-none ${
-            !audit || audit.score > 90 ? 'text-emerald-400' : 
-            audit.score > 80 ? 'text-blue-500' : 
-            audit.score > 70 ? 'text-yellow-400' : 
-            audit.score > 60 ? 'text-orange-400' : 'text-red-400'} 
-            ${audit && audit.date !== new Date().toLocaleDateString() ? 'opacity-50' : 'opacity-100'} transition-opacity`}>
-            {audit && !isNaN(audit.score) ? audit.score : 0}
-        </div>
-    </div>
+{/* OPTIMIZED HEADER: Perfect spacing, slightly smaller buttons & numbers */}
+<div className="relative mb-10 pt-4"> {/* Reduced bottom margin, added top padding */}
 
-    {/* THIS SHOWS THE BIO AGE */}
-    {audit && (
-        <div className="animate-popIn">
-            <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Biological Age</div>
-            <div className={`text-6xl font-black tracking-tighter leading-none ${audit.bioAge > 30 ? 'text-red-500' : 'text-emerald-400'}`}>
-                {audit.bioAge}
-            </div>
-            <div className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-1">Years Old</div>
-        </div>
-    )}
-</div>
-
-    {/* RIGHT SIDE: The Nav Buttons (Now with Layout Reset) */}
-    <div className="flex bg-slate-950 p-1.5 rounded-xl border border-slate-800 shadow-lg h-fit">
+    {/* Top Nav Buttons - Slightly smaller, more compact */}
+    <div className="flex justify-center gap-3 mb-10 px-6"> {/* Reduced gap & added horizontal padding */}
         <button 
             onClick={() => { 
                 setTab('dashboard'); 
-                setPostAnalysisMode(false); // <--- THIS FIXES THE "STUCK" ISSUE
+                setPostAnalysisMode(false);
             }} 
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
-                tab === 'dashboard' ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-900/50' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-900'
+            className={`px-7 py-3 text-base font-black uppercase tracking-widest rounded-xl transition-all duration-300 shadow-lg ${
+                tab === 'dashboard' 
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-cyan-900/50' 
+                    : 'bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700'
             }`}
         >
-            Scan
+            SCAN
         </button>
         <button 
             onClick={() => { 
                 setTab('progress'); 
-                setPostAnalysisMode(false); // <--- EXPANDS LEFT PANEL FOR GRAPHS
+                setPostAnalysisMode(false);
             }} 
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
-                tab === 'progress' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-900'
+            className={`px-7 py-3 text-base font-black uppercase tracking-widest rounded-xl transition-all duration-300 shadow-lg ${
+                tab === 'progress' 
+                    ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-indigo-900/50' 
+                    : 'bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700'
             }`}
         >
-            Data
+            DATA
         </button>
         <button 
             onClick={() => { 
                 setTab('academy'); 
-                setPostAnalysisMode(false); // <--- EXPANDS LEFT PANEL FOR READING
+                setPostAnalysisMode(false);
             }} 
-            className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${
-                tab === 'academy' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/50' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-900'
+            className={`px-7 py-3 text-base font-black uppercase tracking-widest rounded-xl transition-all duration-300 shadow-lg ${
+                tab === 'academy' 
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-emerald-900/50' 
+                    : 'bg-slate-800/50 text-slate-400 hover:text-white hover:bg-slate-700'
             }`}
         >
-            Learn
+            LEARN
         </button>
+    </div>
+
+    {/* Score + Bio Age Row - Slightly smaller numbers, better vertical alignment */}
+    <div className="flex justify-center items-baseline gap-10 px-6"> 
+        {/* Structural Score */}
+        <div className="text-center">
+            <div className="text-xs font-bold text-cyan-500 uppercase tracking-widest mb-1">Structural Score</div>
+            <div className={`text-7xl font-black tracking-tighter leading-none text-yellow-400 ${audit && audit.date !== new Date().toLocaleDateString() ? 'opacity-50' : ''}`}>
+                {audit && !isNaN(audit.score) ? audit.score : 0}
+            </div>
+        </div>
+
+        {/* Biological Age */}
+        {audit && (
+            <div className="text-center">
+                <div className="text-xs font-bold text-red-500 uppercase tracking-widest mb-1">Biological Age</div>
+                <div className="text-7xl font-black tracking-tighter leading-none text-red-500">
+                    {audit.bioAge}
+                </div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Years Old</div>
+            </div>
+        )}
     </div>
 </div>
 
