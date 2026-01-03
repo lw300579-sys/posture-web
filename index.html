@@ -22,7 +22,7 @@
         PoseLandmarker,
         FilesetResolver,
         DrawingUtils
-    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js";
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.js";
 
     // 2. Attach them to the global window object so the React app can see them
     window.mpVision = {
@@ -430,50 +430,75 @@ const calculateAngle = (p1, p2, p3) => {
 };
 
 const calculateLivePostureScore = (keypoints) => {
-  if (!keypoints) return 0;
+  if (!keypoints || keypoints.length < 33) return 50;  // Early guard
 
   let total = 0;
   let count = 0;
 
-  // Forward Head (ear to shoulder alignment) - using nose (0) and mid-shoulder
-  const nose = keypoints[0];
+  const valid = (kp) => kp && (kp.score || kp.visibility || 0) > 0.3;  // Lower threshold for live
+
+  // Get proportions for normalization
   const leftShoulder = keypoints[11];
   const rightShoulder = keypoints[12];
-  if (nose && leftShoulder && rightShoulder) {
+  const shoulderWidth = valid(leftShoulder) && valid(rightShoulder) ? Math.abs(leftShoulder.x - rightShoulder.x) : 0.2;  // Default 20% if missing
+  const estHeight = Math.max(...keypoints.map(kp => kp.y || 0)) - Math.min(...keypoints.map(kp => kp.y || 0)) || 1;  // Full body y-span
+
+  // Forward Head: Normalize dev by shoulder width
+  const nose = keypoints[0];
+  if (valid(nose) && valid(leftShoulder) && valid(rightShoulder)) {
     const midShoulderX = (leftShoulder.x + rightShoulder.x) / 2;
-    const headDeviation = Math.abs(nose.x - midShoulderX);
-    total += 100 - (headDeviation * 800); // higher deviation = worse
+    const headDeviation = Math.abs(nose.x - midShoulderX) / shoulderWidth;  // Relative to width
+    total += Math.max(0, 100 - (headDeviation * 400));  // Softer multiplier
     count++;
   }
 
-  // Shoulder levelness
-  if (leftShoulder && rightShoulder) {
-    const shoulderDiff = Math.abs(leftShoulder.y - rightShoulder.y);
-    total += 100 - (shoulderDiff * 1000);
+  // Shoulder levelness: Normalize by height (vertical diffs scale with tall bodies)
+  if (valid(leftShoulder) && valid(rightShoulder)) {
+    const shoulderDiff = Math.abs(leftShoulder.y - rightShoulder.y) / estHeight;
+    total += Math.max(0, 100 - (shoulderDiff * 800));  // Adjusted
     count++;
   }
 
-  // Hip levelness
+  // Hip levelness: Similar normalization
   const leftHip = keypoints[23];
   const rightHip = keypoints[24];
-  if (leftHip && rightHip) {
-    const hipDiff = Math.abs(leftHip.y - rightHip.y);
-    total += 100 - (hipDiff * 1000);
+  if (valid(leftHip) && valid(rightHip)) {
+    const hipDiff = Math.abs(leftHip.y - rightHip.y) / estHeight;
+    total += Math.max(0, 100 - (hipDiff * 800));
     count++;
   }
 
-  // Knee alignment (valgus/varus proxy)
+  // Knee alignment: PER-LEG valgus/varus (FIX: Was mid-only)
   const leftKnee = keypoints[25];
   const rightKnee = keypoints[26];
-  if (leftKnee && rightKnee && leftHip && rightHip) {
-    const midHipX = (leftHip.x + rightHip.x) / 2;
-    const midKneeX = (leftKnee.x + rightKnee.x) / 2;
-    const kneeDeviation = Math.abs(midKneeX - midHipX);
-    total += 100 - (kneeDeviation * 1200);
+  const leftAnkle = keypoints[27];
+  const rightAnkle = keypoints[28];
+  let kneeTotal = 0;
+  let kneeCount = 0;
+
+  // Left leg: Ideal ~175-185° (slight bend ok)
+  if (valid(leftHip) && valid(leftKnee) && valid(leftAnkle)) {
+    const leftAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+    const leftDev = Math.abs(180 - leftAngle) / 90;  // Normalize 0-1
+    kneeTotal += 100 - (leftDev * 100);
+    kneeCount++;
+  }
+
+  // Right leg
+  if (valid(rightHip) && valid(rightKnee) && valid(rightAnkle)) {
+    const rightAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+    const rightDev = Math.abs(180 - rightAngle) / 90;
+    kneeTotal += 100 - (rightDev * 100);
+    kneeCount++;
+  }
+
+  if (kneeCount > 0) {
+    total += kneeTotal / kneeCount;
     count++;
   }
 
-  return count > 0 ? Math.round(total / count) : 50;
+  const final = count > 0 ? Math.round(total / count) : 50;
+  return Math.max(40, Math.min(100, final));  // Clamp 40-100
 };
 
 const SFX = {
@@ -4832,46 +4857,46 @@ useEffect(() => {
     };
 
     useEffect(() => {
-        const init = async () => {
-            // Check if MediaPipe is ready. If not, wait 500ms and try again.
-            const mp = window.mpVision || window.vision;
-
-            if (!mp || !mp.FilesetResolver || !mp.PoseLandmarker) {
-                addLog("Awaiting Neural Assets...");
-                setTimeout(init, 500);
-                return;
+    const init = async () => {
+        const checkReady = () => new Promise(resolve => {
+            if (window.mpReady && window.mpVision) {
+                resolve();
+            } else {
+                setTimeout(checkReady, 100);
             }
+        });
 
-            addLog("Warming AI Engine...");
-            try {
-                // Use the 'mp' reference we found above
-                const vision = await mp.FilesetResolver.forVisionTasks(
-                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-                );
+        await checkReady();
+        console.log("MediaPipe fully loaded");
 
-                const poseLandmarker = await mp.PoseLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "IMAGE",
-                    numPoses: 1
-                });
+        const mp = window.mpVision;
 
-                setSystem(prev => ({ ...prev, detector: poseLandmarker }));
-                setIsModelReady(true);
-                addLog("Neural Engine Online. Ready for analysis");
-            } catch (err) {
-                console.error("Init Error:", err);
-                addLog("Hardware Acceleration Error. Retrying...");
-                setTimeout(init, 2000);
-            }
+        addLog("Warming AI Engine...");
+        try {
+            const vision = await mp.FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+            );
 
-            // Load saved data logic remains the same below...
-            // V82 Legacy Load Removed - Using V99 Protocol Only
-        };
-        init();
-    }, []);
+            const poseLandmarker = await mp.PoseLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task`,
+                    delegate: "CPU"
+                },
+                runningMode: "IMAGE",
+                numPoses: 1
+            });
+
+            setSystem(prev => ({ ...prev, detector: poseLandmarker }));
+            setIsModelReady(true);
+            addLog("Neural Engine Online. Ready for analysis");
+        } catch (e) {
+            console.error("Init Error:", e);
+            addLog("Hardware Acceleration Error. Retrying...");
+            setTimeout(init, 2000);
+        }
+    }
+    init();
+}, []);
 
     // NEW: Streak Calculation
     const calculateStreak = (hist) => {
@@ -5280,6 +5305,10 @@ const startLiveMode = async () => {
         let captured3DData = null; 
         let net = system.detector;
 
+        // --- NEW: Initialize proportion variables BEFORE the loop ---
+        let frontShoulderWidth = null; 
+        let estHeight = null;
+
         if (!navigator.onLine) {
             addLog(" Offline — Connect to analyze.");
             setStatus(prev => ({ ...prev, analyzing: false }));
@@ -5341,7 +5370,6 @@ const startLiveMode = async () => {
         };
 
         try {
-            // --- ANALYSIS LOOP ---
             for (const view of views) {
                 const img = uploadRefs[view].current;
                 if (!img || img.naturalWidth === 0) continue;
@@ -5374,6 +5402,24 @@ const startLiveMode = async () => {
                 
                 // Draw visual feedback
                 drawSkeleton(keypoints, view); 
+
+                // --- NEW FIX: EXTRACT PROPORTIONS INSIDE THE LOOP ---
+                // This prevents the ReferenceError because 'view' and 'p' exist here
+                if (view === 'front' && !frontShoulderWidth) {
+                    const lSh = p[11]; 
+                    const rSh = p[12]; 
+                    if (valid(lSh) && valid(rSh)) {
+                        frontShoulderWidth = Math.abs(lSh.x - rSh.x); // Normalized width (0-1)
+                    }
+                }
+                // Extract estHeight from any view (max y - min y of keypoints)
+                if (!estHeight) {
+                    const ys = p.filter(kp => valid(kp)).map(kp => kp.y);
+                    if (ys.length > 0) {
+                        estHeight = Math.max(...ys) - Math.min(...ys) || 1; 
+                    }
+                }
+                // ---------------------------------------------------
 
                 // --- SINGLE PASS ANALYSIS (NO DUPLICATES) ---
                 if (view === 'front') {
@@ -5465,11 +5511,45 @@ const startLiveMode = async () => {
             gait: avg(rawScores.gait)
         };
 
-        // Fallbacks
+        // Get global proportions (use defaults if not extracted)
+        const shoulderWidth = frontShoulderWidth || 0.2;  // Default if no front view
+        estHeight = estHeight || 1;  // Default if no keypoints
+
+        // Apply normalization, torsion, and symptoms to final
         Object.keys(final).forEach(k => {
             if (final[k] === null || isNaN(final[k])) final[k] = 75;
-            final[k] = Math.max(10, Math.min(100, Math.floor(final[k])));
+            // Normalize: e.g., for head, divide raw dev by estHeight before penalty
+            final[k] = Math.max(40, Math.min(100, Math.floor(final[k] / estHeight * 100))); 
         });
+
+        // Integrate 3D torsion (z) for rotation penalty
+        if (captured3DData) {
+            const lSh3D = captured3DData[11], rSh3D = captured3DData[12];
+            if (lSh3D && rSh3D) {
+                const torsionAngle = calculateTorsion(lSh3D, rSh3D); 
+                const torsionPenalty = torsionAngle * 1.5; 
+                final.shoulders = Math.max(40, final.shoulders - torsionPenalty);
+            }
+            const lHip3D = captured3DData[23], rHip3D = captured3DData[24];
+            if (lHip3D && rHip3D) {
+                const hipTorsion = calculateTorsion(lHip3D, rHip3D);
+                const hipPenalty = hipTorsion * 1.2; 
+                final.hip = Math.max(40, final.hip - hipPenalty);
+            }
+            const lAnk3D = captured3DData[27], rAnk3D = captured3DData[28];
+            if (lAnk3D && rAnk3D) {
+                const gaitTorsion = calculateTorsion(lAnk3D, rAnk3D);
+                const gaitPenalty = gaitTorsion * 1.8; 
+                final.gait = Math.max(40, final.gait - gaitPenalty);
+            }
+        }
+
+        // Symptom Weighting: Boost penalty if symptom-linked
+        if (symptoms.includes('Neck Pain')) final.head *= 0.9; 
+        if (symptoms.includes('Back Pain')) final.spine *= 0.9;
+        if (symptoms.includes('Knee Pain')) final.gait *= 0.85; 
+        if (symptoms.includes('Foot Pain')) final.gait *= 0.9;
+        if (symptoms.includes('Shoulder Pain')) final.shoulders *= 0.9;
 
         const scoreValues = Object.values(final).filter(v => typeof v === 'number');
         const average = scoreValues.length ? scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length : 70;
@@ -5514,7 +5594,7 @@ const startLiveMode = async () => {
         setTab(history.length === 0 ? 'results' : 'dashboard');
 
         SFX.success();
-        generateProgram();                    
+        generateProgram();                     
         setShowProtocolButton(true);           
         setPostAnalysisMode(true);             
         document.body.classList.remove('analyzing');
